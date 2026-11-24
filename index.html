@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<title>Инструктаж КарНУ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--bg:#f4f1ea;--card:#fffdf8;--ink:#1d2430;--mute:#5d6672;--line:#d9d3c5;--acc:#1f3a5f;--accInk:#fff;--ok:#2e6b3f;--warn:#9a6200;--bad:#a3261c}
+@media (prefers-color-scheme:dark){:root{--bg:#14181e;--card:#1c222a;--ink:#e8e4da;--mute:#9aa3ad;--line:#333b45;--acc:#8fb3e0;--accInk:#0e1620;--ok:#7fc492;--warn:#e0b45c;--bad:#ef8a80}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--acc);color:var(--accInk);padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
+header h1{font-size:18px;margin:0;flex:1;font-weight:600}
+header button{background:none;border:0;color:inherit;font-size:22px;padding:6px 8px;min-width:44px;min-height:44px}
+main{padding:16px;padding-bottom:calc(96px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 4px;font-size:16px}
+.sub{color:var(--mute);font-size:14px}
+label{display:block;font-size:14px;color:var(--mute);margin:12px 0 4px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:48px}
+textarea{min-height:90px;resize:vertical}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-weight:600;border-radius:10px;border:1px solid var(--acc);background:var(--acc);color:var(--accInk);padding:12px 16px;min-height:48px;text-decoration:none;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--acc)}
+.btn.block{width:100%}
+.btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
+.btn:disabled{opacity:.45}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px;z-index:4}
+.bar .btn{flex:1}
+.row{display:flex;gap:10px;align-items:center}
+.tag{display:inline-block;font-size:13px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warn);border-color:var(--warn)}.tag.bad{color:var(--bad);border-color:var(--bad)}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.list li:last-child{border-bottom:0}
+.list .grow{flex:1;min-width:0}
+.list input[type=checkbox]{width:26px;min-height:26px;height:26px;flex:none}
+.empty{text-align:center;color:var(--mute);padding:32px 8px}
+.qrbox{text-align:center}
+.qrbox img{width:min(78vw,340px);height:auto;image-rendering:pixelated;background:#fff;padding:10px;border-radius:12px}
+.who{font-size:22px;font-weight:700;margin:6px 0 2px;text-align:center}
+.status{text-align:center;margin:12px 0;min-height:24px}
+.err{color:var(--bad);white-space:pre-wrap}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(90px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9;text-align:center}
+.toast.on{opacity:1}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.lock{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px}
+.lock input{max-width:220px;text-align:center;font-size:24px;letter-spacing:6px}
+.note{font-size:14px;color:var(--mute);border-left:3px solid var(--line);padding-left:10px;margin:10px 0}
+.demo-flag{background:var(--warn);color:#fff;text-align:center;font-size:13px;padding:4px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="lock" class="lock" hidden>
+  <h2 style="margin:0">Инструктаж КарНУ</h2>
+  <div class="sub">Введите PIN</div>
+  <input id="pin-in" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+  <button class="btn" id="pin-ok">Открыть</button>
+  <div class="err" id="pin-err"></div>
+</div>
+<header><button id="back" aria-label="Назад" hidden>←</button><h1 id="title">Инструктажи</h1><button id="menu" aria-label="Настройки">⚙</button></header>
+<div id="demo-flag" class="demo-flag" hidden>Демо-режим: подписи без ЭЦП, юридической силы не имеют</div>
+<main id="view"></main>
+<div class="bar" id="bar" hidden></div>
+<div class="toast" id="toast"></div>
+<script src="sigex.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
