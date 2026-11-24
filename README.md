@@ -26,3 +26,6 @@ PIN защищает от случайного просмотра, но не ш�
 `index.html`, `app.js` — приложение; `sigex.js` — клиент SIGEX QR (MIT, © SIGEX); `sw.js` — офлайн-кэш; `manifest.webmanifest`, `icon*` — установка.
 
 Для камеры и установки нужен HTTPS (GitHub Pages подходит).
+
+## Адрес приложения
+https://aukeev.github.io/instruktazh-mobile/ (GitHub Pages, ветка `main`, корень)
