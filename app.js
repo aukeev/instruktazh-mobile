@@ -18,8 +18,9 @@ const TYPES = ['Вводный', 'Первичный', 'Повторный', 'В
 const needReason = t => t === 'Внеплановый' || t === 'Целевой';
 
 /* ---------- хранение ---------- */
-let db = { records: [], staff: [], settings: { instructor: { fio: '', position: '', iin: '' }, demo: false, pinHash: '', lastInstr: {} }, exported: {} };
-try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); db = { ...db, ...d, settings: { ...db.settings, ...(d.settings || {}) } }; } } catch (e) { }
+let db = { records: [], staff: [], settings: { instructor: { fio: '', position: '', iin: '' }, demo: false, pinHash: '', lastInstr: {} }, exported: {}, server: { url: '', token: '', user: null, synced: {}, rejected: {}, staffUpdated: '', lastOk: '', lastErr: '' } };
+try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); db = { ...db, ...d, settings: { ...db.settings, ...(d.settings || {}) }, server: { ...db.server, ...(d.server || {}) } }; } } catch (e) { }
+if (!db.server.url && location.protocol === 'https:' && !/github\.io$/.test(location.hostname)) db.server.url = location.origin;
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('Не удалось сохранить. Выгрузите записи в файл.'); } };
 const toast = t => { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 3200); };
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { });
@@ -177,6 +178,72 @@ const exportRecords = async (list, viaShare) => {
   toast('Файл сформирован: ' + list.length + ' запис.');
 };
 
+/* ---------- общий сервер журнала: автоматическая отправка закрытых записей ----------
+   Закрытая запись ставится в очередь; отправка при закрытии, при запуске, при появлении сети и раз в минуту.
+   Демо-записи на сервер не отправляются. */
+const srv = db.server;
+const srvOn = () => !!(srv.url && srv.token);
+const isSynced = r => !!srv.synced[r.id];
+const queue = () => db.records.filter(r => r.instructorSig && !r.demo && !srv.synced[r.id] && !srv.rejected[r.id]);
+const isOut = r => !!(db.exported[r.id] || srv.synced[r.id]);
+const api = async (method, p, body) => {
+  let res;
+  try { res = await fetch(srv.url.replace(/\/+$/, '') + p, { method, headers: { 'Content-Type': 'application/json', ...(srv.token ? { Authorization: 'Bearer ' + srv.token } : {}) }, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { const er = new Error('Нет связи с сервером'); er.net = true; throw er; }
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 401 && p !== '/api/login') { srv.token = ''; save(); }
+  if (!res.ok) { const e = new Error(j.error || ('Ошибка сервера ' + res.status)); e.body = j; throw e; }
+  return j;
+};
+let syncing = null;
+const syncNow = (loud) => {
+  if (!srvOn()) return Promise.resolve();
+  if (syncing) return syncing;
+  syncing = (async () => {
+    try {
+      const list = queue();
+      for (let i = 0; i < list.length; i += 20) {
+        const part = list.slice(i, i + 20);
+        const res = await api('POST', '/api/records', { records: part });
+        const t = new Date().toISOString();
+        for (const x of res.results) {
+          if (['added', 'updated', 'same'].includes(x.status)) srv.synced[x.id] = t;
+          else srv.rejected[x.id] = x.status;
+        }
+        save();
+      }
+      if (!srv.staffChecked || Date.now() - Date.parse(srv.staffChecked) > 6 * 3600000) await staffFromServer(false);
+      srv.lastOk = new Date().toISOString(); srv.lastErr = ''; save();
+      if (list.length) toast('На сервер отправлено записей: ' + list.length);
+      else if (loud) toast('Очередь пуста, всё отправлено');
+    } catch (e) {
+      srv.lastErr = e.message; save();
+      if (loud || !e.net) toast('Сервер: ' + e.message);
+    } finally { syncing = null; if (['home', 'record'].includes(cur().v) || (loud && cur().v === 'settings')) render(); }
+  })();
+  return syncing;
+};
+const staffFromServer = async loud => {
+  const j = await api('GET', '/api/staff');
+  srv.staffChecked = new Date().toISOString();
+  if (!j.staff.length) { if (loud) toast('На сервере списка персонала пока нет'); save(); return; }
+  if (j.updated === srv.staffUpdated && !loud) { save(); return; }
+  const r = mergeStaff(j.staff.filter(x => x && x.fio).map(x => ({ id: String(x.id || uid()), fio: normFio(x.fio), iin: String(x.iin || ''), tab: String(x.tab || ''), birthYear: String(x.birthYear || ''), position: String(x.position || ''), unit: String(x.unit || '') })));
+  srv.staffUpdated = j.updated; save();
+  toast(`Список персонала с сервера: добавлено ${r.add}, обновлено ${r.upd}`);
+};
+window.addEventListener('online', () => syncNow(false));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow(false); });
+setInterval(() => { if (queue().length) syncNow(false); }, 60000);
+const srvLine = r => {
+  if (!r.instructorSig) return '';
+  if (r.demo) return 'Демо-запись: на сервер не отправляется.';
+  if (srv.synced[r.id]) return 'Отправлено на сервер ' + fmtDT(srv.synced[r.id]);
+  if (srv.rejected[r.id]) return 'Сервер не принял запись (' + ({ conflict: 'на сервере другая версия', forbidden: 'запись другого инструктирующего', invalid: 'ошибка формата' }[srv.rejected[r.id]] || srv.rejected[r.id]) + '). Выгрузите файл и передайте инженеру ОТОС.';
+  if (srvOn()) return 'Ждет отправки на сервер' + (srv.lastErr ? ' (' + srv.lastErr.toLowerCase() + ', повторим автоматически)' : '');
+  return db.exported[r.id] ? 'Выгружено в файл ' + fmtDT(db.exported[r.id]) : 'Ещё не передано в журнал';
+};
+
 /* ================= ЭКРАНЫ ================= */
 const VIEWS = {};
 
@@ -185,14 +252,17 @@ VIEWS.home = () => {
   const ins = db.settings.instructor;
   let h = '';
   if (!ins.fio) h += `<div class="card"><h3>Начните с настроек</h3><div class="sub">Укажите свои ФИО и должность как инструктирующего и загрузите список персонала.</div><div style="margin-top:10px"><button class="btn block" data-go="settings">Открыть настройки</button></div></div>`;
-  const notExp = db.records.filter(r => r.instructorSig && !db.exported[r.id]);
-  if (notExp.length) h += `<div class="card"><h3>Не выгружено в журнал: ${notExp.length}</h3><div class="sub">Закрытые записи нужно передать в журнал на компьютере.</div><div class="row" style="margin-top:10px"><button class="btn" id="exp-new" style="flex:1">Выгрузить</button></div></div>`;
+  const notExp = db.records.filter(r => r.instructorSig && !isOut(r));
+  const q = queue();
+  if (srvOn() && q.length) h += `<div class="card"><h3>Ждут отправки на сервер: ${q.length}</h3><div class="sub">${srv.lastErr ? esc(srv.lastErr) + '. ' : ''}Отправятся сами, когда появится интернет.</div><div class="row" style="margin-top:10px"><button class="btn" id="sync-now" style="flex:1">Отправить сейчас</button></div></div>`;
+  else if (!srvOn() && notExp.length) h += `<div class="card"><h3>Не выгружено в журнал: ${notExp.length}</h3><div class="sub">Закрытые записи нужно передать в журнал на компьютере. Чтобы они уходили сами, войдите на общий сервер в настройках.</div><div class="row" style="margin-top:10px"><button class="btn" id="exp-new" style="flex:1">Выгрузить</button></div></div>`;
   if (!db.records.length) h += `<div class="empty">Записей пока нет.<br>Нажмите «Новый инструктаж».</div>`;
-  else h += `<div class="card"><ul class="list">${db.records.map(r => `<li data-rec="${esc(r.id)}"><div class="grow"><b>${esc(fmtD(r.date))}, ${esc(r.type.toLowerCase())}</b><div class="sub">${esc(r.unit)} · ${r.workers.length} чел.</div></div>${recStatus(r)}</li>`).join('')}</ul></div>`;
+  else h += `<div class="card"><ul class="list">${db.records.map(r => `<li data-rec="${esc(r.id)}"><div class="grow"><b>${esc(fmtD(r.date))}, ${esc(r.type.toLowerCase())}</b><div class="sub">${esc(r.unit)} · ${r.workers.length} чел.${r.instructorSig && srvOn() && !r.demo ? (isSynced(r) ? ' · на сервере' : ' · ждет отправки') : ''}</div></div>${recStatus(r)}</li>`).join('')}</ul></div>`;
   $('#view').innerHTML = h;
   setBar(`<button class="btn" id="new-btn">＋ Новый инструктаж</button>`);
   $('#new-btn').onclick = () => { if (!db.settings.instructor.fio) { toast('Сначала укажите свои ФИО в настройках'); go('settings'); return; } go('new', { draft: null }); };
   const eb = $('#exp-new'); if (eb) eb.onclick = () => exportRecords(notExp, true);
+  const sb = $('#sync-now'); if (sb) sb.onclick = () => { sb.disabled = true; sb.textContent = 'Отправка...'; syncNow(true); };
 };
 
 VIEWS.new = s => {
@@ -282,12 +352,12 @@ VIEWS.record = s => {
     <div class="card"><ul class="list">${r.workers.map(w => `<li><div class="grow"><b>${esc(w.fio)}</b><div class="sub">${esc(w.profession || '')}${w.sig && w.sig.signer && w.sig.signer.cn ? '<br>Подписал: ' + esc(w.sig.signer.cn + ' ' + w.sig.signer.gn) + ' ' + esc(maskIIN(w.sig.signer.iin)) : ''}</div>${sigTag(w.sig)}
       ${closed ? '' : `<label class="row" style="margin:6px 0 0;color:var(--ink);font-size:14px"><input type="checkbox" data-kn="${esc(w.id)}" ${w.knowledge ? 'checked' : ''} ${w.sig ? 'disabled' : ''} style="width:22px;min-height:22px;height:22px"> знания проверены</label>`}</div>
       ${closed ? '' : w.sig && workerOk(w) ? '' : `<button class="btn ${w.sig ? 'ghost' : ''}" data-sw="${esc(w.id)}">${w.sig ? 'Заново' : 'Подписать'}</button>`}</li>`).join('')}</ul></div>
-    ${closed ? `<div class="card"><h3>Запись закрыта</h3><div class="sub">Подпись инструктирующего: ${esc(r.instructorSig.signer.cn || r.instructor.fio)}, ${esc(fmtDT(r.instructorSig.signer.time || r.instructorSig.at))}</div><div class="sub">${db.exported[r.id] ? 'Выгружено в журнал ' + esc(fmtDT(db.exported[r.id])) : 'Ещё не выгружено в журнал'}</div></div>` : ''}
+    ${closed ? `<div class="card"><h3>Запись закрыта</h3><div class="sub">Подпись инструктирующего: ${esc(r.instructorSig.signer.cn || r.instructor.fio)}, ${esc(fmtDT(r.instructorSig.signer.time || r.instructorSig.at))}</div><div class="sub">${esc(srvLine(r))}</div></div>` : ''}
     ${!closed && !r.workers.some(w => w.sig) ? `<button class="btn danger block" id="del">Удалить черновик</button>` : ''}`;
   $('#view').addEventListener('change', e => { const id = e.target.dataset.kn; if (!id) return; const w = r.workers.find(x => x.id === id); w.knowledge = e.target.checked; save(); });
   $('#view').addEventListener('click', e => { const id = e.target.dataset.sw; if (id) go('sign', { id: r.id, wid: id }); });
   const del = $('#del'); if (del) del.onclick = () => { if (confirm('Удалить черновик записи?')) { db.records = db.records.filter(x => x.id !== r.id); save(); back(); } };
-  if (closed) setBar(`<button class="btn" id="exp">Выгрузить в журнал</button>`), $('#exp').onclick = () => exportRecords([r], true);
+  if (closed) setBar(`<button class="btn ${srvOn() ? 'ghost' : ''}" id="exp">Выгрузить в файл</button>`), $('#exp').onclick = () => exportRecords([r], true);
   else if (canClose(r)) setBar(`<button class="btn" id="close">Подписать и закрыть запись</button>`), $('#close').onclick = () => go('sign', { id: r.id, wid: 'instr' });
   else if (nextW) setBar(`<button class="btn" id="go-next">Подписать: ${esc(nextW.fio.split(' ').slice(0, 2).join(' '))}</button>`), $('#go-next').onclick = () => go('sign', { id: r.id, wid: nextW.id });
   else setBar('');
@@ -322,6 +392,7 @@ VIEWS.sign = async s => {
       r.instructorSig = sig; if (r.workers.some(x => x.sig && x.sig.demo) || sig.demo) r.demo = true;
       if (!r.instructor.iin && sig.signer.iin) r.instructor.iin = sig.signer.iin;
       if (!db.settings.instructor.iin && sig.signer.iin && !sig.demo) db.settings.instructor.iin = sig.signer.iin;
+      setTimeout(() => syncNow(false), 300);
     } else {
       putSig(w, sig); r.instructorSig = null;
       if (!w.iin && sig.signer.iin && sig.check === 'name' && !sig.demo) { w.iin = sig.signer.iin; if (!w.birthYear) w.birthYear = byFromIIN(w.iin); }
@@ -337,7 +408,7 @@ VIEWS.sign = async s => {
 };
 
 VIEWS.settings = () => {
-  title('Настройки');
+  title('Настройки'); setBar('');
   const ins = db.settings.instructor;
   $('#view').innerHTML = `
     <div class="card"><h3>Инструктирующий</h3>
@@ -349,17 +420,46 @@ VIEWS.settings = () => {
       <div class="note">CSV из штатки (ФИО; ИИН; Табельный номер; Должность; Подразделение) или архив .json журнала.</div>
       <label class="btn ghost block" style="margin-top:6px;color:var(--acc)">Загрузить файл<input type="file" id="s-staff" accept=".csv,.txt,.json,text/csv,application/json" hidden></label>
       ${db.staff.length ? '<div style="margin-top:10px"><button class="btn danger block" id="s-staff-clr">Очистить список</button></div>' : ''}</div>
-    <div class="card"><h3>Выгрузка в журнал</h3><div class="sub">Записей на телефоне: ${db.records.length}, закрытых: ${db.records.filter(r => r.instructorSig).length}.</div>
+    <div class="card"><h3>Общий сервер журнала</h3>${srvOn() ? `
+      <div class="sub">Вход: <b>${esc((srv.user && (srv.user.fio || srv.user.login)) || '')}</b>, сервер ${esc(srv.url)}.<br>${srv.lastOk ? 'Последняя связь: ' + esc(fmtDT(srv.lastOk)) : 'Связи еще не было'}${srv.lastErr ? '<br>Ошибка: ' + esc(srv.lastErr) : ''}<br>Ждут отправки: ${queue().length}.</div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="srv-sync" style="flex:1">Отправить сейчас</button></div>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" id="srv-staff" style="flex:1">Обновить список персонала</button></div>
+      <div class="row" style="margin-top:10px"><button class="btn danger" id="srv-out" style="flex:1">Выйти</button></div>
+      <div class="note">Закрытые записи отправляются сами. Без интернета они ждут в очереди на телефоне.</div>` : `
+      <div class="note">Логин и пароль выдает администратор журнала. После входа закрытые записи уходят в журнал сами, без файлов.</div>
+      <label for="srv-url">Адрес сервера</label><input id="srv-url" inputmode="url" autocomplete="url" placeholder="https://journal.example.kz" value="${esc(srv.url)}">
+      <label for="srv-login">Логин</label><input id="srv-login" autocomplete="username" autocapitalize="off" value="${esc((srv.user && srv.user.login) || '')}">
+      <label for="srv-pass">Пароль</label><input id="srv-pass" type="password" autocomplete="current-password">
+      <div id="srv-new-box" hidden><label for="srv-new">Придумайте новый пароль (не короче 8 символов)</label><input id="srv-new" type="password" autocomplete="new-password"></div>
+      <div style="margin-top:10px"><button class="btn block" id="srv-in">Войти</button></div><div class="err" id="srv-err"></div>`}</div>
+    <div class="card"><h3>Выгрузка в файл</h3><div class="sub">Записей на телефоне: ${db.records.length}, закрытых: ${db.records.filter(r => r.instructorSig).length}.</div>
       <div style="margin-top:10px" class="row"><button class="btn" id="s-exp-all" style="flex:1">Все записи в файл</button></div>
-      <div class="note">Файл открывается в журнале на компьютере кнопкой импорта архива.</div></div>
+      <div class="note">Запасной способ без сервера: файл открывается в журнале на компьютере кнопкой «Загрузить архив».</div></div>
     <div class="card"><h3>Защита</h3><div class="sub">${db.settings.pinHash ? 'PIN установлен.' : 'PIN не установлен.'} Приложение блокируется через 2 минуты в фоне. PIN защищает от случайного просмотра, но не шифрует данные.</div>
       <label for="s-pin">Новый PIN (4–8 цифр, пусто = убрать)</label><input id="s-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
       <div style="margin-top:10px"><button class="btn ghost block" id="s-pin-set">Сохранить PIN</button></div></div>
     <div class="card"><h3>Демо-режим</h3><label class="row" style="color:var(--ink);font-size:16px"><input type="checkbox" id="s-demo" ${db.settings.demo ? 'checked' : ''} style="width:24px;min-height:24px;height:24px"> Подпись без eGov, для обучения</label>
       <div class="note">Демо-записи помечаются и не имеют юридической силы.</div></div>
-    <div class="card"><h3>Очистка</h3><div class="sub">Удаляет записи, уже выгруженные в журнал, чтобы ИИН не хранились на телефоне.</div>
+    <div class="card"><h3>Очистка</h3><div class="sub">Удаляет закрытые записи, уже отправленные на сервер или выгруженные в файл, чтобы ИИН не хранились на телефоне.</div>
       <div style="margin-top:10px"><button class="btn danger block" id="s-clean">Удалить выгруженные записи</button></div></div>
-    <div class="sub" style="text-align:center">Версия 0.1 (прототип)</div>`;
+    <div class="sub" style="text-align:center">Версия 0.2</div>`;
+  const si = $('#srv-in'); if (si) si.onclick = async () => {
+    $('#srv-err').textContent = ''; let url = $('#srv-url').value.trim().replace(/\/+$/, ''); if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
+    if (!url) { $('#srv-err').textContent = 'Укажите адрес сервера'; return; }
+    srv.url = url; si.disabled = true;
+    try {
+      const j = await api('POST', '/api/login', { login: $('#srv-login').value, password: $('#srv-pass').value, newPassword: ($('#srv-new').value || undefined), device: 'телефон: ' + navigator.userAgent.slice(0, 80) });
+      srv.token = j.token; srv.user = j.user; srv.lastErr = ''; save();
+      if (!db.settings.instructor.fio && j.user.fio) db.settings.instructor.fio = j.user.fio;
+      toast('Вход выполнен'); await staffFromServer(false).catch(() => { }); await syncNow(false); render();
+    } catch (e) { si.disabled = false; if (e.body && e.body.mustChange) $('#srv-new-box').hidden = false; $('#srv-err').textContent = e.message; }
+  };
+  const ss = $('#srv-sync'); if (ss) ss.onclick = () => syncNow(true);
+  const sst = $('#srv-staff'); if (sst) sst.onclick = () => staffFromServer(true).then(render).catch(e => toast('Сервер: ' + e.message));
+  const so = $('#srv-out'); if (so) so.onclick = async () => {
+    const q = queue().length; if (q && !confirm(`На телефоне ${q} неотправленных записей. Они останутся на телефоне и уйдут после следующего входа. Выйти?`)) return;
+    try { await api('POST', '/api/logout'); } catch (e) { } srv.token = ''; save(); render();
+  };
   $('#s-save').onclick = () => {
     const iin = normIIN($('#s-iin').value); if (iin && !iinValid(iin)) { toast('ИИН неверный (12 цифр, контрольная цифра)'); return; }
     db.settings.instructor = { fio: normFio($('#s-fio').value), position: $('#s-pos').value.trim(), iin }; save(); toast('Сохранено');
@@ -381,8 +481,8 @@ VIEWS.settings = () => {
   };
   $('#s-demo').onchange = e => { db.settings.demo = e.target.checked; save(); render(); };
   $('#s-clean').onclick = () => {
-    const n = db.records.filter(r => r.instructorSig && db.exported[r.id]).length; if (!n) { toast('Нет выгруженных закрытых записей'); return; }
-    if (confirm(`Удалить с телефона ${n} выгруженных записей? Убедитесь, что они импортированы в журнал.`)) { db.records = db.records.filter(r => !(r.instructorSig && db.exported[r.id])); save(); render(); toast('Удалено: ' + n); }
+    const n = db.records.filter(r => r.instructorSig && isOut(r)).length; if (!n) { toast('Нет отправленных или выгруженных закрытых записей'); return; }
+    if (confirm(`Удалить с телефона ${n} закрытых записей, которые уже на сервере или выгружены в файл?`)) { db.records = db.records.filter(r => !(r.instructorSig && isOut(r))); save(); render(); toast('Удалено: ' + n); }
   };
 };
 
@@ -391,4 +491,5 @@ document.addEventListener('click', e => { const g = e.target.closest('[data-go]'
 history.replaceState({ n: 1 }, '');
 lock();
 render();
+syncNow(false);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });

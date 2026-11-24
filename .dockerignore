@@ -1,0 +1,5 @@
+.git
+shots
+server/data
+server/backups
+server/.env

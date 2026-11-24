@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пользователи журнала</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fffdf8;--ink:#1d2430;--mute:#5d6672;--line:#d9d3c5;--acc:#1f3a5f;--accInk:#fff;--ok:#2e6b3f;--bad:#a3261c}
+@media (prefers-color-scheme:dark){:root{--bg:#14181e;--card:#1c222a;--ink:#e8e4da;--mute:#9aa3ad;--line:#333b45;--acc:#8fb3e0;--accInk:#0e1620;--ok:#7fc492;--bad:#ef8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
+header{background:var(--acc);color:var(--accInk);padding:12px 16px;display:flex;gap:12px;align-items:center}header h1{font-size:18px;margin:0;flex:1}
+main{max-width:1000px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;overflow-x:auto}
+h2{font-size:16px;margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--mute);margin:8px 0 3px}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px;min-height:40px;width:100%}
+.btn{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--acc);background:var(--acc);color:var(--accInk);padding:8px 14px;min-height:40px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--acc)}.btn.small{min-height:32px;padding:4px 10px;font-size:13px}
+header .btn{border-color:var(--accInk);color:var(--accInk);background:transparent}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}
+.sub{color:var(--mute);font-size:13px}.err{color:var(--bad);white-space:pre-wrap;margin-top:8px}
+.pass{font:600 18px ui-monospace,Consolas,monospace;background:var(--bg);padding:8px 12px;border-radius:8px;display:inline-block;margin:6px 0;user-select:all}
+.off{opacity:.5}[hidden]{display:none!important}
+#login{max-width:360px;margin:40px auto}
+</style>
+</head>
+<body>
+<header><h1>Журнал инструктажей: администрирование</h1><span id="who" class="sub" style="color:inherit"></span><button class="btn small" id="out" hidden>Выйти</button></header>
+<main>
+<div id="login" class="card">
+  <h2>Вход администратора</h2>
+  <label for="l-login">Логин</label><input id="l-login" autocomplete="username">
+  <label for="l-pass">Пароль</label><input id="l-pass" type="password" autocomplete="current-password">
+  <div id="l-new-box" hidden><label for="l-new">Новый пароль (не короче 8 символов)</label><input id="l-new" type="password" autocomplete="new-password"></div>
+  <div style="margin-top:12px"><button class="btn" id="l-go">Войти</button></div>
+  <div class="err" id="l-err"></div>
+</div>
+<div id="app" hidden>
+  <div class="card"><h2>Состояние</h2><div id="stats" class="sub"></div><div style="margin-top:10px"><button class="btn ghost small" id="bk">Сделать резервную копию сейчас</button></div></div>
+  <div class="card"><h2>Новый пользователь</h2>
+    <div class="grid">
+      <div><label for="u-login">Логин (латиницей)</label><input id="u-login" placeholder="ivanov.i"></div>
+      <div><label for="u-fio">ФИО</label><input id="u-fio"></div>
+      <div><label for="u-role">Роль</label><select id="u-role"><option value="instructor">Инструктирующий</option><option value="otos">Инженер ОТОС (видит всё)</option><option value="admin">Администратор</option></select></div>
+      <div><label for="u-unit">Подразделение</label><input id="u-unit"></div>
+      <div><button class="btn" id="u-add">Создать</button></div>
+    </div>
+    <div class="err" id="u-err"></div>
+    <div id="u-new" hidden></div>
+  </div>
+  <div class="card"><h2>Пользователи</h2><table><thead><tr><th>Логин</th><th>ФИО</th><th>Роль</th><th>Подразделение</th><th>Статус</th><th></th></tr></thead><tbody id="users"></tbody></table></div>
+  <div class="card"><h2>Журнал действий (последние 200)</h2><table><thead><tr><th>Время</th><th>Кто</th><th>Адрес</th><th>Действие</th><th>Подробности</th></tr></thead><tbody id="audit"></tbody></table></div>
+</div>
+</main>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ROLE={instructor:'Инструктирующий',otos:'Инженер ОТОС',admin:'Администратор'};
+const ACT={'login.ok':'вход','login.fail':'неудачный вход','password.change':'смена пароля','record.add':'новая запись','record.update':'запись дополнена','record.conflict':'КОНФЛИКТ закрытой записи','staff.put':'список персонала обновлен','user.add':'создан пользователь','user.update':'изменен пользователь','user.reset':'сброс пароля','backup':'резервная копия'};
+let token=sessionStorage.getItem('adm-token')||'';
+const api=async(method,p,body)=>{const r=await fetch(p,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(r.status===401&&p!=='/api/login'){token='';sessionStorage.removeItem('adm-token');show()}if(!r.ok){const e=new Error(j.error||('Ошибка '+r.status));e.body=j;throw e}return j};
+const dt=s=>s?new Date(s).toLocaleString('ru-RU'):'';
+$('#l-go').onclick=async()=>{$('#l-err').textContent='';try{const j=await api('POST','/api/login',{login:$('#l-login').value,password:$('#l-pass').value,newPassword:$('#l-new').value||undefined,device:'admin'});if(j.user.role!=='admin'){$('#l-err').textContent='Эта страница только для администратора.';return}token=j.token;sessionStorage.setItem('adm-token',token);show()}catch(e){if(e.body&&e.body.mustChange)$('#l-new-box').hidden=false;$('#l-err').textContent=e.message}};
+$('#l-pass').onkeydown=$('#l-new').onkeydown=e=>{if(e.key==='Enter')$('#l-go').click()};
+$('#out').onclick=async()=>{try{await api('POST','/api/logout')}catch(e){}token='';sessionStorage.removeItem('adm-token');show()};
+$('#bk').onclick=async()=>{try{const j=await api('POST','/api/backup');alertBox('Резервная копия: '+j.file);load()}catch(e){alertBox(e.message)}};
+const alertBox=t=>{$('#stats').insertAdjacentHTML('afterend',`<div class="sub" style="margin-top:6px">${esc(t)}</div>`)};
+$('#u-add').onclick=async()=>{$('#u-err').textContent='';$('#u-new').hidden=true;try{const j=await api('POST','/api/users',{login:$('#u-login').value,fio:$('#u-fio').value,role:$('#u-role').value,unit:$('#u-unit').value});showPass(j.login,j.password);['#u-login','#u-fio','#u-unit'].forEach(s=>$(s).value='');load()}catch(e){$('#u-err').textContent=e.message}};
+const showPass=(login,pass)=>{$('#u-new').hidden=false;$('#u-new').innerHTML=`<p>Передайте пользователю <b>${esc(login)}</b> временный пароль лично (не по почте). При первом входе он задаст свой.</p><div class="pass">${esc(pass)}</div><div class="sub">Пароль показан один раз.</div>`;$('#u-new').scrollIntoView({block:'center'})};
+$('#users').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const login=b.dataset.u;try{
+  if(b.dataset.a==='reset'){if(!confirm('Выдать новый временный пароль для '+login+'? Его сессии на телефоне и компьютере завершатся.'))return;const j=await api('POST','/api/users/update',{login,resetPassword:true});showPass(login,j.password)}
+  if(b.dataset.a==='toggle'){await api('POST','/api/users/update',{login,active:b.dataset.on!=='1'})}
+  if(b.dataset.a==='role'){const r=prompt('Роль: instructor, otos или admin',b.dataset.r);if(!r)return;await api('POST','/api/users/update',{login,role:r.trim()})}
+  load()}catch(err){alert(err.message)}};
+const load=async()=>{
+  const [u,a,s]=await Promise.all([api('GET','/api/users'),api('GET','/api/audit?limit=200'),api('GET','/api/stats')]);
+  $('#users').innerHTML=u.users.map(x=>`<tr class="${x.active?'':'off'}"><td>${esc(x.login)}</td><td>${esc(x.fio)}</td><td>${esc(ROLE[x.role]||x.role)}</td><td>${esc(x.unit)}</td><td>${x.active?(x.must_change?'ждет первого входа':'активен'):'отключен'}</td><td style="white-space:nowrap"><button class="btn ghost small" data-a="reset" data-u="${esc(x.login)}">Новый пароль</button> <button class="btn ghost small" data-a="role" data-u="${esc(x.login)}" data-r="${esc(x.role)}">Роль</button> <button class="btn ghost small" data-a="toggle" data-u="${esc(x.login)}" data-on="${x.active?1:0}">${x.active?'Отключить':'Включить'}</button></td></tr>`).join('');
+  $('#audit').innerHTML=a.audit.map(x=>`<tr><td>${esc(dt(x.at))}</td><td>${esc(x.login||'система')}</td><td>${esc(x.ip||'')}</td><td>${esc(ACT[x.action]||x.action)}</td><td>${esc(x.detail||'')}</td></tr>`).join('');
+  $('#stats').innerHTML=`Записей на сервере: <b>${s.records.n||0}</b>, закрытых: ${s.records.closed||0}. Пользователей: ${s.users.map(x=>esc(ROLE[x.role]||x.role)+' — '+x.n).join(', ')||'нет'}.<br>Последние резервные копии: ${s.backups.length?s.backups.map(b=>esc(b.file)+' ('+Math.round(b.size/1024)+' КБ)').join(', '):'пока нет (создаются ежедневно ночью)'}.`};
+const show=async()=>{const on=!!token;$('#login').hidden=on;$('#app').hidden=!on;$('#out').hidden=!on;if(!on){$('#who').textContent='';return}
+  try{const m=await api('GET','/api/me');$('#who').textContent=m.user.fio||m.user.login;await load()}catch(e){}};
+show();
+</script>
+</body>
+</html>
