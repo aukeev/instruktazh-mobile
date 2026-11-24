@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Журнал инструктажей ЭЦП</title>
+<style>
+/* VOICE: служебный журнал, спокойный и точный
+   IDEA: прошитый журнал регистрации инструктажей (Прил. 16, 17) в цифре
+   PICTURE: рабочая таблица записи с подписями, QR-окно подписи
+   COLOUR and TYPE: белый, чернила, синий штамп ЭЦП, красный для ошибок; системный шрифт
+   LAYOUT: шапка, вкладки, одна колонка формы, карточки записей */
+:root{color-scheme:light dark;--bg:light-dark(#fff,#10161c);--ink:light-dark(#141414,#e8edf1);--mute:light-dark(#5b6670,#9aa7b2);--line:light-dark(#d9dee3,#2a343d);--panel:light-dark(#f2f5f8,#17212a);--blue:light-dark(#1f4fbf,#7fa6ff);--ok:light-dark(#1d7a3e,#6fd394);--warn:light-dark(#9a6200,#f0bd5a);--bad:light-dark(#c4161c,#ff7b7f)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",Roboto,Arial,sans-serif;overflow-x:clip}
+.band{padding:clamp(18px,3vw,36px) max(4vw,14px)}
+.wrap{max-width:1180px;margin:0 auto}
+header.band{border-bottom:3px double var(--line);padding-bottom:14px}
+h1{font-size:clamp(24px,3.4vw,36px);line-height:1.1;margin:0 0 4px;text-wrap:balance}
+h2{font-size:21px;margin:0 0 12px}
+.sub{color:var(--mute);font-size:14px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+nav button{background:none;border:1px solid var(--line);color:var(--ink);padding:10px 16px;border-radius:6px;font:inherit;min-height:44px;cursor:pointer}
+nav button[aria-selected=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+section[hidden]{display:none}
+label{display:block;font-size:14px;color:var(--mute);margin-bottom:4px}
+input,select,textarea{width:100%;font:16px/1.4 inherit;font-family:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;min-height:44px}
+textarea{min-height:76px;resize:vertical}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;margin-bottom:14px}
+.btn{font:inherit;min-height:44px;padding:10px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:none;color:var(--blue)}
+.btn.small{min-height:36px;padding:6px 12px;font-size:14px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}
+th{font-size:13px;color:var(--mute);font-weight:600}
+td input{min-height:38px;padding:6px 8px;font-size:15px}
+.card{border:1px solid var(--line);border-radius:8px;margin-bottom:18px;overflow:hidden}
+.card>.head{background:var(--panel);padding:12px 14px;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline}
+.card>.head b{font-size:17px}
+.card>.body{padding:10px 14px 14px}
+.stamp{display:inline-block;border:1.5px solid var(--blue);color:var(--blue);border-radius:4px;padding:3px 7px;font-size:13px;line-height:1.35}
+.stamp.warn{border-color:var(--warn);color:var(--warn)}.stamp.bad{border-color:var(--bad);color:var(--bad)}.stamp.demo{border-style:dashed}.stamp.name{border-color:var(--warn);color:var(--warn)}.tag.demo{color:var(--warn);border-color:var(--warn)}
+.tag{font-size:13px;padding:2px 8px;border-radius:99px;background:var(--panel);border:1px solid var(--line)}
+.tag.closed{color:var(--ok);border-color:var(--ok)}
+.empty{padding:40px 10px;text-align:center;color:var(--mute)}
+.note{background:var(--panel);border-left:3px solid var(--blue);padding:10px 14px;font-size:14px;margin:12px 0}
+.scroll{overflow-x:auto}
+dialog{border:none;border-radius:10px;padding:0;max-width:min(440px,94vw);width:100%;background:var(--bg);color:var(--ink)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+.dlg{padding:20px;text-align:center}
+.dlg img{width:260px;max-width:100%;image-rendering:pixelated;background:#fff;padding:8px;border-radius:6px}
+.status{margin:12px 0;font-size:15px}
+.err{color:var(--bad);font-size:14px;text-align:left;white-space:pre-wrap}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:6px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+#print{display:none}
+label.btn{display:inline-flex;align-items:center;font-size:16px}
+.chk{display:flex;gap:10px;align-items:center;color:var(--ink);font-size:16px;margin:8px 0}.chk input{width:22px;min-height:22px;flex:none}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--bg);cursor:pointer;text-align:left;font:inherit;color:var(--ink);min-height:44px}
+.tile b{display:block;font-size:30px;line-height:1.1}.tile span{font-size:14px;color:var(--mute)}
+.tile.over b{color:var(--bad)}.tile.soon b{color:var(--warn)}.tile.ok b{color:var(--ok)}.tile[aria-pressed=true]{outline:2px solid var(--blue)}
+.st{font-size:13px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);white-space:nowrap;display:inline-block}
+.st.over{color:var(--bad);border-color:var(--bad)}.st.soon{color:var(--warn);border-color:var(--warn)}.st.ok{color:var(--ok);border-color:var(--ok)}.st.none{color:var(--mute)}
+.alert{margin-top:14px;padding:10px 14px;border-radius:8px;border:1px solid var(--warn);background:light-dark(#fff6e8,#2a2010);display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:15px}
+.alert.bad{border-color:var(--bad);background:light-dark(#fdeced,#2a1214)}
+.alert[hidden]{display:none}
+.picker{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px;background:var(--panel)}
+.plist{max-height:300px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;margin:10px 0}
+.plist label{display:flex;gap:10px;align-items:center;padding:8px 10px;margin:0;color:var(--ink);font-size:15px;border-bottom:1px solid var(--line);cursor:pointer;min-height:44px}
+.plist label.in{opacity:.5;cursor:default}
+.plist input{width:20px;min-height:20px;flex:none}
+.plist small{color:var(--mute)}
+@media(max-width:600px){.btn{white-space:normal;text-align:center}table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8.5em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:8em;margin-inline-start:-8.5em;color:var(--mute);white-space:normal}.stack td:empty{display:none}}
+@media print{body{background:#fff;color:#000;font-size:11pt}header,nav,main,.toast,dialog{display:none!important}#print{display:block;padding:0}#print table{font-size:9pt}#print th,#print td{border:1px solid #000;padding:3px}#print h2{text-align:center;font-size:13pt}.stamp{border-color:#000;color:#000;font-size:8pt}}
+@media(prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header class="band"><div class="wrap">
+  <h1>Журнал регистрации инструктажей с подписью ЭЦП <small style="font-size:14px;font-weight:500;color:var(--muted,#667)">v1.2</small> <span id="srv-badge" class="sub" style="font-size:13px"></span></h1>
+  <div class="sub">Пилотная версия. Подпись через eGov Mobile (QR) по п. 58, 71 Правил № 1019 в ред. приказа МТСЗН № 223. Данные хранятся в этом браузере и, если выполнен вход, на общем сервере журнала.</div>
+  <nav role="tablist">
+    <button role="tab" data-tab="new" aria-selected="true">Новый инструктаж</button>
+    <button role="tab" data-tab="journal" aria-selected="false">Журнал <span id="cnt"></span></button>
+    <button role="tab" data-tab="due" aria-selected="false">Сроки <span id="dcnt"></span></button>
+    <button role="tab" data-tab="staff" aria-selected="false">Персонал <span id="scnt"></span></button>
+    <button role="tab" data-tab="settings" aria-selected="false">Архив и настройки</button>
+  </nav>
+  <div id="due-alert" class="alert" hidden></div>
+</div></header>
+
+<main class="band"><div class="wrap">
+<section id="tab-new">
+  <h2>Новая запись</h2>
+  <div class="grid">
+    <div><label for="f-unit">Подразделение</label><input id="f-unit" list="units" value="АВП «Трудовое»"><datalist id="units"><option>Аппарат при руководстве КарНУ</option><option>ГНПС «Атасу»</option><option>НПС «Степное»</option><option>АВП «Трудовое»</option></datalist><datalist id="staff-names"></datalist></div>
+    <div><label for="f-date">Дата инструктажа</label><input id="f-date" type="date"></div>
+    <div><label for="f-type">Вид инструктажа</label><select id="f-type"><option>Вводный</option><option selected>Первичный</option><option>Повторный</option><option>Внеплановый</option><option>Целевой</option></select></div>
+    <div id="reason-box" hidden><label for="f-reason">Причина проведения</label><input id="f-reason" placeholder="Например: изменение технологического процесса"></div>
+  </div>
+  <div style="margin-bottom:14px"><label for="f-instr">Инструкции, по которым проведен инструктаж (номер, наименование)</label><textarea id="f-instr" placeholder="ИОТ-01 Инструкция по охране труда для оператора НПС"></textarea></div>
+  <div class="grid">
+    <div><label for="f-ifio">Инструктирующий: ФИО</label><input id="f-ifio" list="staff-names" placeholder="Фамилия Имя Отчество"></div>
+    <div><label for="f-ipos">Должность</label><input id="f-ipos" placeholder="Начальник участка"></div>
+    <div><label for="f-iiin">ИИН инструктирующего (для сверки с ЭЦП)</label><input id="f-iiin" inputmode="numeric" maxlength="12"></div>
+  </div>
+  <h2 style="margin-top:22px">Инструктируемые</h2>
+  <div class="picker" id="picker"></div>
+  <div class="scroll"><table class="stack" id="wtable"><thead><tr><th>ФИО</th><th>Год рожд.</th><th>Профессия, должность</th><th>ИИН (сверка)</th><th>Знания проверены</th><th></th></tr></thead><tbody></tbody></table></div>
+  <div class="row" style="margin:12px 0 20px"><button class="btn ghost" id="add-w">+ Добавить работника</button></div>
+  <div class="note">Работников можно отметить в списке персонала выше или ввести вручную: если ввести ИИН или ФИО человека из списка, остальные поля заполнятся сами. Год рождения определяется по ИИН. С ИИН журнал также проверит, что подписал именно этот работник.</div>
+  <div class="row"><button class="btn" id="create">Создать запись и перейти к подписанию</button><span class="err" id="form-err"></span></div>
+</section>
+
+<section id="tab-journal" hidden>
+  <div class="row" style="justify-content:space-between;margin-bottom:14px">
+    <h2 style="margin:0">Записи журнала</h2>
+    <div class="row">
+      <select id="flt" style="width:auto"><option value="all">Все журналы</option><option value="intro">Вводный (Прил. 16)</option><option value="work">На рабочем месте (Прил. 17)</option></select>
+      <input id="q" placeholder="Поиск по ФИО" style="width:180px">
+      <button class="btn ghost" id="print-btn">Печать</button>
+      <button class="btn ghost" id="xlsx-btn">Выгрузить в Excel</button>
+    </div>
+  </div>
+  <div id="list"></div>
+</section>
+
+<section id="tab-due" hidden>
+  <h2>Сроки повторного инструктажа</h2>
+  <p class="sub" id="d-rule"></p>
+  <div class="tiles" id="d-tiles"></div>
+  <div class="row" style="margin:14px 0 10px">
+    <select id="d-unit" style="width:auto"></select>
+    <select id="d-st" style="width:auto"><option value="attn">Требуют внимания</option><option value="over">Просрочено</option><option value="soon">Скоро</option><option value="ok">В норме</option><option value="none">Нет записей</option><option value="all">Все</option></select>
+    <input id="d-q" placeholder="Поиск: ФИО, таб. №" style="width:200px">
+  </div>
+  <div class="scroll"><table class="stack" id="dtable"><thead><tr><th>ФИО</th><th>Подразделение</th><th>Должность</th><th>Последний инструктаж</th><th>Повторный до</th><th>Статус</th></tr></thead><tbody></tbody></table></div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="d-ics">Напоминания в календарь Outlook (.ics)</button>
+    <button class="btn ghost" id="d-mail">Письмо руководителю подразделения</button>
+    <button class="btn ghost" id="d-copy">Скопировать список</button>
+  </div>
+  <div class="note" id="d-note"></div>
+</section>
+
+<section id="tab-staff" hidden>
+  <h2>Список персонала</h2>
+  <p class="sub">Загрузите выгрузку из отдела кадров в Excel или CSV. Нужны столбцы: ФИО (или Фамилия, Имя, Отчество), ИИН, табельный номер, должность, подразделение. Подразделения вида «Объект / Участок» можно выбирать и целиком, и по участкам. Год рождения можно не указывать, он определяется по ИИН. Файл обрабатывается только в этом браузере.</p>
+  <div class="row" style="margin-bottom:8px">
+    <label class="btn" style="margin:0;color:#fff">Загрузить список (.xlsx, .csv)<input type="file" id="staff-file" accept=".xlsx,.xls,.csv,.txt" hidden></label>
+    <button class="btn ghost" id="staff-tpl">Скачать шаблон</button>
+    <button class="btn ghost" id="staff-wipe" style="border-color:var(--bad);color:var(--bad)">Очистить список</button>
+  </div>
+  <label style="display:flex;gap:10px;align-items:center;color:var(--ink);font-size:15px;margin-bottom:6px"><input type="checkbox" id="staff-replace" style="width:20px;min-height:20px"> Заменить текущий список полностью (иначе новые добавятся, а существующие обновятся по ИИН)</label>
+  <div class="err" id="s-msg" style="margin-bottom:12px"></div>
+  <div class="row" style="margin-bottom:10px"><select id="s-unit" style="width:auto"></select><input id="s-q" placeholder="Поиск: ФИО, ИИН, таб. №" style="width:220px"><span class="sub" id="s-info"></span></div>
+  <div class="scroll"><table class="stack" id="stable"><thead><tr><th>ФИО</th><th>Таб. №</th><th>ИИН</th><th>Год рожд.</th><th>Должность</th><th>Подразделение</th><th></th></tr></thead><tbody></tbody></table></div>
+  <details style="margin-top:16px"><summary style="cursor:pointer;min-height:44px;line-height:44px">Добавить работника вручную</summary>
+    <div class="grid" style="margin-top:8px">
+      <div><label for="n-fio">ФИО</label><input id="n-fio"></div>
+      <div><label for="n-iin">ИИН</label><input id="n-iin" inputmode="numeric" maxlength="12"></div>
+      <div><label for="n-pos">Должность</label><input id="n-pos"></div>
+      <div><label for="n-unit">Подразделение</label><input id="n-unit" list="units"></div>
+    </div>
+    <div class="row"><button class="btn" id="n-add">Добавить в список</button><span class="err" id="n-err"></span></div>
+  </details>
+</section>
+
+<section id="tab-settings" hidden>
+  <h2>Общий сервер журнала</h2>
+  <p class="sub">Записи с телефонов инструктирующих приходят сюда автоматически. Журнал сам забирает новые записи с сервера и отправляет туда записи, созданные на этом компьютере.</p>
+  <div id="srv-out">
+    <div class="grid">
+      <div><label for="srv-url">Адрес сервера</label><input id="srv-url" placeholder="https://journal.example.kz" autocomplete="url"></div>
+      <div><label for="srv-login">Логин</label><input id="srv-login" autocomplete="username"></div>
+      <div><label for="srv-pass">Пароль</label><input id="srv-pass" type="password" autocomplete="current-password"></div>
+      <div id="srv-new-box" hidden><label for="srv-new">Новый пароль (не короче 8 символов)</label><input id="srv-new" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="row" style="margin:10px 0 22px"><button class="btn" id="srv-go">Войти</button><span class="err" id="srv-err"></span></div>
+  </div>
+  <div id="srv-in" hidden style="margin-bottom:22px">
+    <p id="srv-state"></p>
+    <div class="row"><button class="btn" id="srv-sync">Синхронизировать сейчас</button><button class="btn ghost" id="srv-staff-get">Взять список персонала с сервера</button><button class="btn ghost" id="srv-staff-put" hidden>Отправить список персонала на сервер</button><button class="btn ghost" id="srv-exit">Выйти</button></div>
+    <div class="note">Список персонала на сервере нужен телефонам инструктирующих: они загружают его сами. Отправлять список может инженер ОТОС.</div>
+  </div>
+  <h2>Архив</h2>
+  <p class="sub">Все данные лежат в памяти этого браузера. Регулярно сохраняйте архив в файл: в нем записи, сами подписи (CMS) и список персонала.</p>
+  <div class="row" style="margin-bottom:22px">
+    <button class="btn" id="export">Сохранить архив (.json)</button>
+    <label class="btn ghost" style="margin:0;color:var(--blue)">Загрузить архив<input type="file" id="import" accept=".json" hidden></label>
+    <button class="btn ghost" id="wipe" style="border-color:var(--bad);color:var(--bad)">Очистить журнал</button>
+  </div>
+  <h2>Повторный инструктаж</h2>
+  <div class="grid">
+    <div><label for="s-period">Периодичность, месяцев</label><input id="s-period" type="number" min="1" max="12" inputmode="numeric"></div>
+    <div><label for="s-lead">Предупреждать заранее, дней</label><input id="s-lead" type="number" min="1" max="90" inputmode="numeric"></div>
+  </div>
+  <label class="chk"><input type="checkbox" id="s-unpl"> Считать внеплановый и целевой инструктаж как повторный</label>
+  <label class="chk" id="s-notify-box"><input type="checkbox" id="s-notify"> Системное уведомление Windows при открытии журнала (не чаще раза в день)</label>
+  <div class="note" style="margin-bottom:22px">По п. 62 Правил № 1019 повторный инструктаж проводится не реже одного раза в полугодие. Заменяет ли его внеплановый, Правила не говорят, поэтому по умолчанию внеплановый не учитывается. Считаются только инструктажи, подписанные работником.</div>
+  <h2>Режим</h2>
+  <label style="display:flex;gap:10px;align-items:center;color:var(--ink);font-size:16px"><input type="checkbox" id="demo" style="width:22px;min-height:22px"> Демо-режим: имитация подписи без eGov (для проверки интерфейса)</label>
+  <div class="note">Подпись идет через сервис SIGEX (sigex.kz): страница передает текст записи, работник сканирует QR в eGov Mobile, проверяет текст и подписывает своей ЭЦП. Подписанный файл (CMS) сохраняется в журнале и может быть проверен на sigex.kz.</div>
+</section>
+</div></main>
+
+<div id="print"></div>
+
+<dialog id="dlg"><div class="dlg">
+  <h2 id="d-title">Подпись ЭЦП</h2>
+  <div id="d-who" class="sub"></div>
+  <div id="d-qr"></div>
+  <div class="status" id="d-status"></div>
+  <div class="err" id="d-err"></div>
+  <div class="row" style="justify-content:center;margin-top:12px"><a class="btn ghost" id="d-link" href="#" hidden>Открыть в eGov Mobile</a><button class="btn" id="d-close">Закрыть</button></div>
+</div></dialog>
+
+<dialog id="cfm"><div class="dlg"><p id="c-text"></p><div class="row" style="justify-content:center"><button class="btn ghost" id="c-no">Отмена</button><button class="btn" id="c-yes" style="background:var(--bad);border-color:var(--bad)">Да</button></div></div></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+/* sigex-qr-signing-client v0.3.3, MIT License, Copyright (c) 2023 SIGEX */
+// @ts-check
+
+((exports, window) => { // eslint-disable-line max-classes-per-file
+  /**
+   * Класс ошибок QRSigningError.
+   */
+  class QRSigningError extends Error {
+    /**
+     * Конструктор.
+     *
+     * @param {String} message сообщение об ошибке.
+     *
+     * @param {String} [details] пояснение к сообщению об ошибке.
+     *
+     * @param {Boolean} [canceledByUser] была ли ошибка вызвана тем,
+     * что пользователь отменил действие.
+     */
+    constructor(message, details, canceledByUser) {
+      super(message);
+      this.name = 'QRSigningError';
+      this.details = details;
+      this.canceledByUser = canceledByUser;
+    }
+  }
+
+  /**
+   * Класс клиента подписания через QR для произвольных данных (формирует CMS подписи).
+   */
+  class QRSigningClientCMS {
+    /**
+     * Конструктор.
+     *
+     * @param {String} description описание подписываемых данных.
+     *
+     * @param {Boolean} [attach = false] следует ли включить в подпись подписываемые данные.
+     *
+     * @param {String} [baseUrl = 'https://sigex.kz'] базовый URL сервиса SIGEX.
+     */
+    constructor(description, attach = false, baseUrl = 'https://sigex.kz') {
+      this.description = description;
+      this.attach = attach;
+      this.baseUrl = baseUrl;
+      this.retries = 25;
+      this.documentsToSign = [];
+      this.expireAt = null;
+      this.dataURL = null;
+      this.signURL = null;
+      this.qrCode = null;
+      this.eGovMobileLaunchLink = null;
+      this.eGovBusinessLaunchLink = null;
+    }
+
+    /**
+     * Добавить блок данных для подписания, зачастую речь идет о файле.
+     *
+     * @param {String[]} names массив имен подписываемого блока данных на разных языках
+     * [ru, kk, en]. Массив должен сожердать как минимум одну строку, в этом случае она будет
+     * использоваться для всех языков.
+     *
+     * @param {String | ArrayBuffer | Blob | File} data данные, которые нужно подписать,
+     * в виде строки Base64 либо ArrayBuffer, Blob или File.
+     *
+     * @param {Object[]} [meta = []] опциональный массив объектов метаданных, содержащих поля
+     * `"name"` и `"value"` со строковыми значениями.
+     *
+     * @param {Boolean} [isPDF = false] опциональная подсказка для приложения eGov mobile помогающая
+     * ему лучше подобрать приложение для отображения данных перед подписанием.
+     *
+     * @throws QRSigningError
+     */
+    async addDataToSign(names, data, meta = [], isPDF = false) {
+      if (names.length === 0) {
+        throw new QRSigningError('Данные на подписание предоставлены не корректно.', 'Необходимо указать хотябы одно имя для подписываемых данных.');
+      }
+
+      let dataB64 = data;
+      if (typeof data !== 'string') {
+        let dataArrayBuffer = data;
+        if (data instanceof Blob) {
+          dataArrayBuffer = await data.arrayBuffer();
+        }
+
+        dataB64 = QRSigningClientCMS.arrayBufferToB64(dataArrayBuffer);
+      }
+
+      const documentToSign = {
+        id: this.documentsToSign.length + 1,
+        nameRu: names[0],
+        nameKz: names[1] ? names[1] : names[0],
+        nameEn: names[2] ? names[2] : names[0],
+        meta,
+        document: {
+          file: {
+            mime: isPDF ? '@file/pdf' : '',
+            data: dataB64,
+          },
+        },
+      };
+
+      this.documentsToSign.push(documentToSign);
+    }
+
+    /**
+     * Зарегистрировать процедуру QR подписания.
+     *
+     * @returns {Promise<String>} изображение QR кода в Base64 кодировке.
+     *
+     * @throws QRSigningError
+     */
+    async registerQRSinging() {
+      const url = `${this.baseUrl}/api/egovQr`;
+      const data = {
+        description: this.description,
+      };
+
+      let response;
+
+      try {
+        response = await fetch(
+          url,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          },
+        );
+      } catch (err) {
+        throw new QRSigningError(`Не удалось получить ответа от сервера ${url}.`, err.toString());
+      }
+
+      if (!response.ok) {
+        throw new QRSigningError(`Сервер вернул статус '${response.status}: ${response.statusText}'`);
+      }
+
+      const responseJson = await response.json();
+
+      if (responseJson.message) {
+        throw new QRSigningError('Ошибка регистрации процедуры подписания', `message: ${responseJson.message}`);
+      }
+
+      this.qrCode = responseJson.qrCode;
+      this.dataURL = responseJson.dataURL;
+      this.signURL = responseJson.signURL;
+      this.eGovMobileLaunchLink = responseJson.eGovMobileLaunchLink;
+      this.eGovBusinessLaunchLink = responseJson.eGovBusinessLaunchLink;
+
+      return this.qrCode;
+    }
+
+    /**
+     * Получить QR код (необходимо предварительно выполнить регистрацию).
+     *
+     * @returns {String} изображение QR кода в Base64 кодировке.
+     */
+    getQR() {
+      return this.qrCode;
+    }
+
+    /**
+     * Получить ссылку для запуска процедуры подписания в eGov mobile (кросс подписание)
+     * - для тех случаев, когда нужно выполнять подписание на том же самом устройстве, без
+     * необходимости сканировать QR код (необходимо предварительно выполнить регистрацию).
+     *
+     * @returns {String} ссылка для запуска процедуры подписания в eGov mobile.
+     */
+    getEGovMobileLaunchLink() {
+      return this.eGovMobileLaunchLink;
+    }
+
+    /**
+     * Получить ссылку для запуска процедуры подписания в eGov Business (кросс подписание)
+     * - для тех случаев, когда нужно выполнять подписание на том же самом устройстве, без
+     * необходимости сканировать QR код (необходимо предварительно выполнить регистрацию).
+     *
+     * @returns {String} ссылка для запуска процедуры подписания в eGov Business.
+     */
+    getEGovBusinessLaunchLink() {
+      return this.eGovBusinessLaunchLink;
+    }
+
+    /**
+     * Получить подписи под данными. Это может занять много времени, так как в
+     * процессе выполнения данные будут отправлены в eGov mobile, далее нужно
+     * будет дождаться пока пользователь подпишет данные и подписи будут выкачены
+     * обратно.
+     *
+     * @param {Function} [dataSentCallback] опциональная функция, которая будет вызвана после
+     * того, как данные для подписания будут переданы на сервер. Может быть использована для
+     * того, чтобы перестать отображать QR код, так как он больше не действителен.
+     *
+     * @param {Function} [debugErrorsCallback] опциональная функция, которая будет вызвана для
+     * каждого игнорируемого исключения полученного при обработке. Функция предназначена для
+     * отладки.
+     *
+     * @returns {Promise<String[]>} массив подписей под зарегистрированными блоками данных.
+     *
+     * @throws QRSigningError
+     */
+    async getSignatures(dataSentCallback, debugErrorsCallback) {
+      if (this.documentsToSign.length === 0) {
+        throw new QRSigningError('Данные на подписание предоставлены не корректно.', 'Не зарегистрировано ни одного блока данных для подписания.');
+      }
+
+      // Отправка данных
+      {
+        const data = {
+          signMethod: this.attach ? 'CMS_WITH_DATA' : 'CMS_SIGN_ONLY',
+          version: 1,
+          documentsToSign: this.documentsToSign,
+        };
+
+        let response;
+
+        for (let i = 0; i < this.retries; i += 1) {
+          try {
+            response = await fetch( // eslint-disable-line no-await-in-loop
+              this.dataURL,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+                body: JSON.stringify(data),
+              },
+            );
+
+            // Будем пытаться отправлять запросы до тех пор, пока не получим ответа.
+            break;
+          } catch (err) {
+            // Игнорируем исключение и пробуем снова.
+            if (typeof debugErrorsCallback === 'function') {
+              debugErrorsCallback(err);
+            }
+          }
+        }
+
+        if (!response) {
+          throw new QRSigningError(`Не удалось получить ответа от сервера ${this.dataURL}.`);
+        }
+
+        if (!response.ok) {
+          throw new QRSigningError(`Сервер вернул статус '${response.status}: ${response.statusText}'`);
+        }
+
+        const responseJson = await response.json();
+
+        if (responseJson.message) {
+          throw new QRSigningError('Ошибка отправки данных', `message: ${responseJson.message}`);
+        }
+      }
+
+      try {
+        if (typeof dataSentCallback === 'function') {
+          dataSentCallback();
+        }
+      } catch (err) {
+        // Игнорируем проблемы внешнего кода.
+      }
+
+      // Получение подписей
+      {
+        let response;
+
+        for (let i = 0; i < this.retries; i += 1) {
+          try {
+            response = await fetch( // eslint-disable-line no-await-in-loop
+              this.signURL,
+              {
+                cache: 'no-store',
+              },
+            );
+
+            // Будем пытаться отправлять запросы до тех пор, пока не получим ответа.
+            break;
+          } catch (err) {
+            // Игнорируем исключение и пробуем снова.
+            if (typeof debugErrorsCallback === 'function') {
+              debugErrorsCallback(err);
+            }
+          }
+        }
+
+        if (!response) {
+          throw new QRSigningError(`Не удалось получить ответа от сервера ${this.signURL}.`);
+        }
+
+        if (!response.ok) {
+          throw new QRSigningError(`Сервер вернул статус '${response.status}: ${response.statusText}'`);
+        }
+
+        const responseJson = await response.json();
+
+        if (responseJson.message) {
+          throw new QRSigningError('Ошибка получения подписей', `message: ${responseJson.message}`);
+        }
+
+        if (responseJson.status && responseJson.status === 'CANCELED') {
+          throw new QRSigningError('Отмена подписания', 'Подписание отменено пользователем', true);
+        }
+
+        const signatures = responseJson.documentsToSign.map(
+          (documentToSign) => documentToSign.document.file.data,
+        );
+
+        return signatures;
+      }
+    }
+
+    static arrayBufferToB64(arrayBuffer) {
+      let binary = '';
+      const bytes = new Uint8Array(arrayBuffer);
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+  }
+
+  exports.QRSigningClientCMS = QRSigningClientCMS; // eslint-disable-line no-param-reassign
+})(
+  typeof exports === 'undefined' ? this : exports,
+  typeof window === 'undefined' ? { btoa(x) { return x; } } : window,
+); // Заглушка для NodeJS
+
+</script>
+<script>
+{
+const KEY='kto-instr-journal-v1';
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let db={records:[],staff:[],demo:false};
+try{const s=localStorage.getItem(KEY);if(s)db=Object.assign(db,JSON.parse(s))}catch(e){}
+if(!Array.isArray(db.staff))db.staff=[];
+let dirty=true;
+const save=()=>{dirty=true;try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){toast('Не удалось сохранить в браузере. Сохраните архив в файл.')}try{updDue()}catch(e){}try{window.srvSoon&&window.srvSoon()}catch(e){}};
+const toast=t=>{const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on'),3200)};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fmtD=d=>d?d.split('-').reverse().join('.'):'';
+const fmtDT=iso=>{const d=new Date(iso);return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
+const kindOf=r=>r.type==='Вводный'?'intro':'work';
+const maskIIN=i=>i?('ИИН ••••'+String(i).slice(-4)):'';
+
+/* ---------- вкладки ---------- */
+const tabs=[...document.querySelectorAll('nav button')];
+const show=name=>{tabs.forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===name));['new','journal','due','staff','settings'].forEach(n=>$('#tab-'+n).hidden=n!==name);if(name==='journal')render();if(name==='due')renderDue();if(name==='staff')renderStaff();if(name==='new')renderPicker()};
+
+/* ---------- персонал: общие функции ---------- */
+const byFromIIN=i=>{if(!/^\d{12}$/.test(i||''))return'';const c={1:1800,2:1800,3:1900,4:1900,5:2000,6:2000}[i[6]];return c?String(c+ +i.slice(0,2)):''};
+const normIIN=v=>{let d=String(v??'').replace(/\D/g,'');if(d.length===11)d='0'+d;return d};
+const iinOk=i=>{if(!/^\d{12}$/.test(i||''))return false;const d=[...i].map(Number);let s=0;for(let k=0;k<11;k++)s+=d[k]*(k+1);s%=11;if(s===10){const w=[3,4,5,6,7,8,9,10,11,1,2];s=0;for(let k=0;k<11;k++)s+=d[k]*w[k];s%=11;if(s===10)return false}return s===d[11]};
+const nameKey=s=>(s.fio||'').toLowerCase()+'|'+(s.unit||'').toLowerCase();
+const unitMatch=(s,u)=>!u||s.unit===u||s.unit.startsWith(u+' / ');
+const textMatch=(s,q)=>!q||s.fio.toLowerCase().includes(q)||s.iin.includes(q)||(s.tab||'').includes(q);
+const uLabel=u=>{const p=u.split(' / ');return p.length>1?'\u00a0\u00a0\u00a0\u00a0· '+p.slice(1).join(' / '):u};
+const findByIIN=i=>i?db.staff.find(s=>s.iin===i):null;
+const findByFio=f=>{const k=(f||'').trim().replace(/\s+/g,' ').toLowerCase();if(!k)return null;const m=db.staff.filter(s=>s.fio.toLowerCase()===k);return m.length===1?m[0]:null};
+const units=()=>{const s=new Set();for(const x of db.staff){if(!x.unit)continue;const p=x.unit.split(' / ');for(let i=1;i<=p.length;i++)s.add(p.slice(0,i).join(' / '))}return[...s].sort((a,b)=>a.localeCompare(b,'ru'))};
+const sel=new Set();
+tabs.forEach(b=>b.addEventListener('click',()=>show(b.dataset.tab)));
+
+/* ---------- форма ---------- */
+{const _d=new Date();$('#f-date').value=`${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`}
+const typeSel=$('#f-type');
+const syncReason=()=>{$('#reason-box').hidden=!['Внеплановый','Целевой'].includes(typeSel.value)};
+typeSel.addEventListener('change',syncReason);syncReason();
+const wbody=$('#wtable tbody');
+const addW=(d={})=>{const tr=document.createElement('tr');tr.innerHTML='<td><input class="w-fio" list="staff-names" placeholder="Фамилия Имя Отчество"></td><td><input class="w-by" inputmode="numeric" maxlength="4" style="width:76px"></td><td><input class="w-prof"></td><td><input class="w-iin" inputmode="numeric" maxlength="12"></td><td><input type="checkbox" class="w-kn" checked style="width:22px;min-height:22px"></td><td><button class="btn ghost small w-del" aria-label="Удалить">✕</button></td>';
+  tr.querySelector('.w-fio').value=d.fio||'';tr.querySelector('.w-by').value=d.birthYear||byFromIIN(d.iin)||'';tr.querySelector('.w-prof').value=d.position||'';tr.querySelector('.w-iin').value=d.iin||'';
+  wbody.appendChild(tr);return tr};
+const fillRow=(tr,s)=>{tr.dataset.sid=s.id;const set=(c,v)=>{const el=tr.querySelector(c);if(!el.value.trim()&&v)el.value=v};set('.w-fio',s.fio);set('.w-iin',s.iin);set('.w-prof',s.position);set('.w-by',s.birthYear||byFromIIN(s.iin))};
+wbody.addEventListener('click',e=>{if(e.target.classList.contains('w-del')){if(wbody.rows.length>1)e.target.closest('tr').remove();else{const tr=e.target.closest('tr');delete tr.dataset.sid;tr.querySelectorAll('input:not([type=checkbox])').forEach(i=>i.value='')}renderPicker()}});
+wbody.addEventListener('change',e=>{const tr=e.target.closest('tr');if(!tr)return;const c=e.target.classList;
+  if(c.contains('w-iin')){const i=e.target.value.replace(/\D/g,'');e.target.value=i;const s=findByIIN(i);if(s)fillRow(tr,s);else{const by=tr.querySelector('.w-by');if(!by.value)by.value=byFromIIN(i)}}
+  if(c.contains('w-fio')){const s=findByFio(e.target.value);if(s)fillRow(tr,s)}
+  if(c.contains('w-iin')||c.contains('w-fio'))renderPicker()});
+$('#add-w').addEventListener('click',()=>addW());addW();addW();
+$('#f-unit').addEventListener('change',()=>{const v=$('#f-unit').value.trim(),us=$('#p-unit');if(us&&units().includes(v)){us.value=v;renderPicker()}});
+$('#f-ifio').addEventListener('change',()=>{const s=findByFio($('#f-ifio').value);if(s){if(!$('#f-ipos').value)$('#f-ipos').value=s.position;if(!$('#f-iiin').value)$('#f-iiin').value=s.iin}});
+$('#f-iiin').addEventListener('change',()=>{const s=findByIIN($('#f-iiin').value.trim());if(s){if(!$('#f-ifio').value)$('#f-ifio').value=s.fio;if(!$('#f-ipos').value)$('#f-ipos').value=s.position}});
+
+/* ---------- выбор работников из списка ---------- */
+const picker=$('#picker');
+const inRows=()=>{const s=new Set();for(const tr of wbody.rows){const i=tr.querySelector('.w-iin').value.trim(),f=tr.querySelector('.w-fio').value.trim().replace(/\s+/g,' ').toLowerCase();if(i)s.add(i);if(f)s.add(f)}return s};
+const added=(have,s)=>(s.iin&&have.has(s.iin))||have.has(s.fio.toLowerCase());
+const pickerShown=()=>{const u=$('#p-unit').value,q=$('#p-q').value.trim().toLowerCase();return db.staff.filter(s=>unitMatch(s,u)&&textMatch(s,q))};
+const updAddBtn=()=>{const b=$('#p-add');if(b){b.textContent=`Добавить отмеченных (${sel.size})`;b.disabled=!sel.size}};
+const addSelected=()=>{const have=inRows();const empties=[...wbody.rows].filter(tr=>!tr.querySelector('.w-fio').value.trim()&&!tr.querySelector('.w-iin').value.trim());
+  let n=0;for(const id of sel){const s=db.staff.find(x=>x.id===id);if(!s||added(have,s))continue;fillRow(empties.shift()||addW(),s);have.add(s.fio.toLowerCase());if(s.iin)have.add(s.iin);n++}
+  sel.clear();renderPicker();toast('Добавлено работников: '+n)};
+const renderPicker=()=>{
+  if(!db.staff.length){picker.innerHTML='<div class="sub">Чтобы не набирать работников вручную, загрузите список персонала на вкладке «Персонал». Тогда здесь можно будет отметить нужных людей галочками.</div>';delete picker.dataset.ready;return}
+  if(!picker.dataset.ready){
+    picker.innerHTML='<label for="p-q" style="color:var(--ink);font-weight:600;font-size:16px">Выбрать из списка персонала</label><div class="row"><select id="p-unit" style="width:auto"></select><input id="p-q" placeholder="Поиск: ФИО, ИИН, таб. №" style="width:220px"></div><div class="plist" id="p-list"></div><div class="row"><button class="btn ghost small" id="p-all">Отметить всех показанных</button><button class="btn ghost small" id="p-none">Снять отметки</button><button class="btn small" id="p-add"></button></div>';
+    picker.dataset.ready='1';picker.dataset.first='1';
+    $('#p-unit').addEventListener('change',()=>{const v=$('#p-unit').value;if(v)$('#f-unit').value=v;renderPicker()});$('#p-q').addEventListener('input',renderPicker);
+    $('#p-list').addEventListener('change',e=>{const id=e.target.dataset.sid;if(id){e.target.checked?sel.add(id):sel.delete(id);updAddBtn()}});
+    $('#p-all').addEventListener('click',()=>{const have=inRows();pickerShown().forEach(s=>{if(!added(have,s))sel.add(s.id)});renderPicker()});
+    $('#p-none').addEventListener('click',()=>{sel.clear();renderPicker()});
+    $('#p-add').addEventListener('click',addSelected)}
+  const us=$('#p-unit'),cur=picker.dataset.first?$('#f-unit').value.trim():us.value,ul=units();delete picker.dataset.first;
+  us.innerHTML=`<option value="">Все подразделения (${db.staff.length})</option>`+ul.map(u=>`<option value="${esc(u)}">${esc(uLabel(u))} (${db.staff.filter(s=>unitMatch(s,u)).length})</option>`).join('');
+  us.value=ul.includes(cur)?cur:'';
+  const have=inRows(),list=pickerShown(),lim=list.slice(0,500);
+  $('#p-list').innerHTML=lim.length?lim.map(s=>{const a=added(have,s);return `<label class="${a?'in':''}"><input type="checkbox" data-sid="${esc(s.id)}" ${a?'disabled checked':sel.has(s.id)?'checked':''}><span>${esc(s.fio)}<br><small>${esc([s.position,s.unit,s.tab?'таб. № '+s.tab:''].filter(Boolean).join(', '))}${a?' (уже в записи)':''}</small></span></label>`}).join('')+(list.length>500?`<div class="sub" style="padding:8px 10px">Показаны первые 500 из ${list.length}. Уточните поиск.</div>`:''):'<div class="sub" style="padding:10px">Никого не найдено</div>';
+  updAddBtn()};
+
+$('#create').addEventListener('click',()=>{
+  const err=$('#form-err');err.textContent='';
+  const workers=[...wbody.rows].map(tr=>({id:uid(),fio:tr.querySelector('.w-fio').value.trim(),birthYear:tr.querySelector('.w-by').value.trim(),profession:tr.querySelector('.w-prof').value.trim(),iin:tr.querySelector('.w-iin').value.trim(),knowledge:tr.querySelector('.w-kn').checked,sid:tr.dataset.sid||'',sig:null})).filter(w=>w.fio);
+  workers.forEach(w=>{w.fio=w.fio.replace(/\s+/g,' ');if(!w.birthYear)w.birthYear=byFromIIN(w.iin)});
+  const r={id:uid(),created:new Date().toISOString(),unit:$('#f-unit').value.trim(),date:$('#f-date').value,type:typeSel.value,reason:$('#reason-box').hidden?'':$('#f-reason').value.trim(),instructions:$('#f-instr').value.trim(),instructor:{fio:$('#f-ifio').value.trim(),position:$('#f-ipos').value.trim(),iin:$('#f-iiin').value.trim()},workers,instructorSig:null};
+  const miss=[];if(!r.unit)miss.push('подразделение');if(!r.date)miss.push('дата');if(!r.instructions)miss.push('инструкции');if(!r.instructor.fio)miss.push('ФИО инструктирующего');if(!workers.length)miss.push('хотя бы один работник');if(!$('#reason-box').hidden&&!r.reason)miss.push('причина');
+  const badIIN=[r.instructor.iin,...workers.map(w=>w.iin)].filter(i=>i&&!/^\d{12}$/.test(i));if(badIIN.length)miss.push('ИИН должен быть из 12 цифр');
+  else{const badSum=[r.instructor.iin,...workers.map(w=>w.iin)].filter(i=>i&&!iinOk(i));if(badSum.length)miss.push('ИИН с ошибкой (не сходится контрольная цифра): '+badSum.join(', '))}
+  if(miss.length){err.textContent='Заполните: '+miss.join(', ');return}
+  db.records.unshift(r);save();
+  wbody.innerHTML='';addW();addW();$('#f-reason').value='';sel.clear();renderPicker();
+  show('journal');toast('Запись создана. Работники подписывают по очереди.');
+});
+
+/* ---------- текст подписываемого документа ---------- */
+const head=r=>['АО «КазТрансОйл», Карагандинское нефтепроводное управление',
+  (r.type==='Вводный'?'ЖУРНАЛ РЕГИСТРАЦИИ ВВОДНОГО ИНСТРУКТАЖА (Прил. 16 к Правилам № 1019)':'ЖУРНАЛ РЕГИСТРАЦИИ ИНСТРУКТАЖЕЙ НА РАБОЧЕМ МЕСТЕ (Прил. 17 к Правилам № 1019)'),
+  'Подразделение: '+r.unit,'Запись: '+r.id,'Дата инструктажа: '+fmtD(r.date),'Вид инструктажа: '+r.type,
+  r.reason?'Причина проведения: '+r.reason:'','Инструкции: '+r.instructions,
+  'Инструктаж провел: '+r.instructor.fio+(r.instructor.position?', '+r.instructor.position:'')].filter(Boolean);
+const workerDoc=(r,w)=>[...head(r),'','Инструктируемый: '+w.fio,w.birthYear?'Год рождения: '+w.birthYear:'',w.profession?'Профессия, должность: '+w.profession:'',
+  'Проверка знаний: '+(w.knowledge?'знания проверены':'не проводилась'),'',
+  'Подписывая настоящий документ своей ЭЦП, подтверждаю, что инструктаж прошел, содержание инструкций мне понятно, обязуюсь их выполнять.'].filter(s=>s!=='' || true).join('\n');
+const hex=async b64=>{try{const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return 'н/д'}};
+const instructorDoc=async r=>{const lines=[...head(r),'','Список инструктируемых и их подписей (SHA-256 файла подписи):'];
+  for(const [i,w] of r.workers.entries())lines.push(`${i+1}. ${w.fio}: ${w.sig?(w.sig.demo?'демо':await hex(w.sig.cms)):'не подписано'}`);
+  lines.push('','Подписывая настоящий документ своей ЭЦП, подтверждаю проведение инструктажа указанным работникам.');return lines.join('\n')};
+
+/* ---------- разбор CMS: кто подписал ---------- */
+const OIDS={'2.5.4.3':'cn','2.5.4.4':'surname','2.5.4.42':'gn','2.5.4.5':'serial','2.5.4.10':'o','2.5.4.11':'ou'};
+const tlv=(b,p)=>{const tag=b[p];let len=b[p+1],hl=2;if(len===undefined)return null;if(len&0x80){const n=len&0x7f;if(!n||n>4)return null;len=0;for(let i=0;i<n;i++)len=len*256+b[p+2+i];hl=2+n}return{tag,s:p+hl,e:p+hl+len}};
+const kids=(b,s,e)=>{const out=[];let p=s;while(p<e){const t=tlv(b,p);if(!t||t.e>e)break;out.push(t);p=t.e}return out};
+const oid=(b,t)=>{const a=b.subarray(t.s,t.e);const r=[Math.floor(a[0]/40),a[0]%40];let v=0;for(let i=1;i<a.length;i++){v=v*128+(a[i]&0x7f);if(!(a[i]&0x80)){r.push(v);v=0}}return r.join('.')};
+const str=(b,t)=>{const a=b.subarray(t.s,t.e);if(t.tag===0x0c)return new TextDecoder('utf-8').decode(a);if(t.tag===0x1e)return new TextDecoder('utf-16be').decode(a);return String.fromCharCode(...a)};
+const asTime=(b,t)=>{const s=str(b,t);const y=t.tag===0x17?(+s.slice(0,2)<50?2000:1900)+ +s.slice(0,2):+s.slice(0,4);const o=t.tag===0x17?2:4;return new Date(Date.UTC(y,+s.slice(o,o+2)-1,+s.slice(o+2,o+4),+s.slice(o+4,o+6),+s.slice(o+6,o+8),+s.slice(o+8,o+10)||0)).toISOString()};
+const parseCMS=b64=>{const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const names=[];let time=null;
+  const walk=(s,e,d)=>{if(d>40)return;for(const t of kids(b,s,e)){
+    if(t.tag===0x30){const k=kids(b,t.s,t.e);
+      if(k.length&&k.every(x=>x.tag===0x31)){const n={};for(const set of k){const atv=kids(b,set.s,set.e)[0];if(!atv||atv.tag!==0x30)continue;const [o,v]=kids(b,atv.s,atv.e);if(o&&o.tag===0x06&&v){const key=OIDS[oid(b,o)];if(key)n[key]=str(b,v)}}if(Object.keys(n).length)names.push(n)}
+      if(k[0]&&k[0].tag===0x06&&k[1]&&k[1].tag===0x31&&oid(b,k[0])==='1.2.840.113549.1.9.5'){const tt=kids(b,k[1].s,k[1].e)[0];if(tt&&(tt.tag===0x17||tt.tag===0x18))try{time=asTime(b,tt)}catch(e){}}}
+    if(t.tag&0x20)walk(t.s,t.e,d+1)}};
+  try{walk(0,b.length,0)}catch(e){}
+  const n=names.find(x=>/^IIN\d{12}$/.test(x.serial||''))||{};
+  return{cn:n.cn||'',gn:n.gn||'',iin:(n.serial||'').replace('IIN',''),org:n.o||'',time}};
+const nTok=x=>String(x||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-яәғқңөұүһі\s-]/gi,' ').trim().split(/\s+/).filter(Boolean);
+const check=(person,signer)=>{if(!signer.iin&&!signer.cn)return'warn';if(person.iin)return person.iin===signer.iin?'ok':'bad';
+  const p=nTok(person.fio),c=nTok(signer.cn);if(!p.length||!c.length)return'warn';
+  if(p[0]===c[0]&&p[1]&&c[1]&&p[1]===c[1])return'name';return'warn'};
+
+/* ---------- подписание ---------- */
+const dlg=$('#dlg');let token=0;
+const openDlg=(title,who)=>{$('#d-title').textContent=title;$('#d-who').textContent=who;$('#d-qr').innerHTML='';$('#d-err').textContent='';$('#d-link').hidden=true;$('#d-status').textContent='Регистрация процедуры подписания...';dlg.showModal()};
+$('#d-close').addEventListener('click',()=>{token++;dlg.close()});
+const sign=async(text,names,meta,person)=>{
+  const my=++token;
+  if(db.demo){await new Promise(r=>setTimeout(r,900));if(my!==token)return null;return{demo:true,cms:'',signer:{cn:person.fio.toUpperCase(),gn:'',iin:person.iin||'',time:null},at:new Date().toISOString(),check:'ok',doc:text}}
+  const c=new QRSigningClientCMS('Журнал инструктажей КарНУ',true);
+  await c.addDataToSign(names,new TextEncoder().encode(text).buffer,meta,false);
+  const qr=await c.registerQRSinging();if(my!==token)return null;
+  $('#d-qr').innerHTML=`<img alt="QR-код для eGov Mobile" src="data:image/gif;base64,${esc(qr)}">`;
+  const link=c.getEGovMobileLaunchLink();if(link){const a=$('#d-link');a.href=link;a.hidden=false}
+  $('#d-status').textContent='Откройте eGov Mobile, нажмите «eGov QR» и отсканируйте код.';
+  const sigs=await c.getSignatures(()=>{if(my!==token)return;$('#d-qr').innerHTML='';$('#d-link').hidden=true;$('#d-status').textContent='Данные переданы на телефон. Проверьте текст и подпишите.'});
+  if(my!==token)return null;
+  const signer=parseCMS(sigs[0]);
+  return{demo:false,cms:sigs[0],signer,at:new Date().toISOString(),check:check(person,signer),doc:text}};
+const fail=e=>{const net=e&&(e.message||'').includes('Не удалось получить ответа');
+  $('#d-status').textContent='';$('#d-err').textContent=(e.message||String(e))+(e.details?'\n'+e.details:'')+(net?'\n\nНет связи с sigex.kz. Проверьте интернет. Если файл открыт двойным щелчком и подпись не идет, откройте его через веб-сервер (см. инструкцию) или включите демо-режим для проверки.':'')};
+const result=(s,who)=>{const m={ok:'Подпись принята.',warn:'Подпись принята, но ФИО в сертификате не удалось сверить. Проверьте вручную.',name:'Подпись принята. Фамилия и имя совпали с сертификатом, но ИИН работника не указан: сверка только по ФИО.',bad:'ВНИМАНИЕ: ИИН или ФИО в ЭЦП не совпадает с данными работника. Подпись помечена как ошибочная.'};$('#d-status').textContent=m[s.check]+' '+(s.signer.cn?`Подписал: ${s.signer.cn} ${s.signer.gn} ${maskIIN(s.signer.iin)}`:'');};
+
+const signWorker=async(rid,wid)=>{const r=db.records.find(x=>x.id===rid),w=r&&r.workers.find(x=>x.id===wid);if(!w)return;
+  openDlg('Подпись инструктируемого',w.fio);
+  try{const s=await sign(workerDoc(r,w),[`Инструктаж: ${w.fio}, ${fmtD(r.date)}`,`Нұсқама: ${w.fio}, ${fmtD(r.date)}`],[{name:'Вид инструктажа',value:r.type},{name:'Дата',value:fmtD(r.date)},{name:'Инструктирующий',value:r.instructor.fio}],w);
+    if(!s)return;if(w.sig){(w.sigHistory=w.sigHistory||[]).push({...w.sig,replacedAt:new Date().toISOString()})}w.sig=s;r.instructorSig=null;save();render();result(s)}catch(e){fail(e)}};
+const signInstr=async rid=>{const r=db.records.find(x=>x.id===rid);if(!r)return;
+  if(!db.demo&&r.workers.some(w=>w.sig&&w.sig.demo)){toast('В записи есть демо-подписи. Переподпишите этих работников настоящей ЭЦП.');return}
+  openDlg('Подпись инструктирующего',r.instructor.fio);
+  try{const s=await sign(await instructorDoc(r),[`Инструктаж провел: ${r.instructor.fio}, ${fmtD(r.date)}`],[{name:'Вид инструктажа',value:r.type},{name:'Работников',value:String(r.workers.length)}],r.instructor);
+    if(!s)return;r.instructorSig=s;save();render();result(s)}catch(e){fail(e)}};
+
+/* ---------- отрисовка журнала ---------- */
+const stamp=s=>s?`<span class="stamp ${s.check==='ok'?'':s.check}${s.demo?' demo':''}">${s.demo?'ДЕМО, без ЭЦП<br>':'ЭЦП: '}${esc(s.signer.cn)} ${esc(s.signer.gn)}${s.signer.iin?'<br>'+esc(maskIIN(s.signer.iin)):''}<br>${esc(fmtDT(s.signer.time||s.at))}</span>`:'';
+const isDemoRec=r=>!!(r.instructorSig&&r.instructorSig.demo)||r.workers.some(w=>w.sig&&w.sig.demo);
+const filtered=()=>{const f=$('#flt').value,q=$('#q').value.trim().toLowerCase();return db.records.filter(r=>(f==='all'||kindOf(r)===f)&&(!q||r.workers.some(w=>w.fio.toLowerCase().includes(q))||r.instructor.fio.toLowerCase().includes(q)))};
+const render=()=>{$('#cnt').textContent=db.records.length?`(${db.records.length})`:'';
+  const list=filtered();
+  if(!list.length){$('#list').innerHTML=`<div class="empty">${db.records.length?'Ничего не найдено.':'Записей пока нет. Создайте первую на вкладке «Новый инструктаж».'}</div>`;return}
+  $('#list').innerHTML=list.map(r=>{const all=r.workers.every(w=>w.sig&&w.sig.check!=='bad');const closed=!!r.instructorSig;const isDemo=isDemoRec(r);
+    return `<div class="card"><div class="head"><b>${esc(fmtD(r.date))}, ${esc(r.type.toLowerCase())} инструктаж</b><span>${esc(r.unit)}</span><span class="sub">Провел: ${esc(r.instructor.fio)}${r.instructor.position?', '+esc(r.instructor.position):''}</span>${isDemo?'<span class="tag demo">Демо, не имеет силы</span>':''}<span class="tag ${closed?'closed':''}">${closed?'Закрыта':'Подписано '+r.workers.filter(w=>w.sig).length+' из '+r.workers.length}</span></div>
+    <div class="body"><div class="sub" style="margin-bottom:6px">Инструкции: ${esc(r.instructions)}${r.reason?'<br>Причина: '+esc(r.reason):''}</div>
+    <div class="scroll"><table class="stack"><thead><tr><th>№</th><th>ФИО</th><th>Год рожд.</th><th>Профессия</th><th>Знания</th><th>Подпись</th></tr></thead><tbody>
+    ${r.workers.map((w,i)=>`<tr><td>${i+1}</td><td>${esc(w.fio)}</td><td>${esc(w.birthYear)}</td><td>${esc(w.profession)}</td><td>${w.knowledge?'проверены':'нет'}</td><td>${w.sig?stamp(w.sig)+' ':''}${w.sigHistory&&w.sigHistory.length?`<small class="sub">переподписано, прежних подписей: ${w.sigHistory.length}</small> `:''}${closed?'':`<button class="btn small ${w.sig?'ghost':''}" data-sw="${esc(r.id)}|${esc(w.id)}">${w.sig?'Переподписать':'Подписать'}</button>`}${w.sig&&!w.sig.demo?` <button class="btn ghost small" data-dl="${esc(r.id)}|${esc(w.id)}">.cms</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row" style="margin-top:12px">${closed?`<span class="sub">Инструктирующий:</span> ${stamp(r.instructorSig)}`:`<button class="btn" data-si="${esc(r.id)}" ${all?'':'disabled'}>Подписать как инструктирующий и закрыть запись</button>${all?'':'<span class="sub">Доступно после подписи всех работников</span>'}`}
+    ${closed||r.workers.some(w=>w.sig)?'':`<button class="btn ghost small" data-del="${esc(r.id)}" style="border-color:var(--bad);color:var(--bad)">Удалить черновик</button>`}</div></div></div>`}).join('')};
+$('#list').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.sw){const [r,w]=b.dataset.sw.split('|');signWorker(r,w)}
+  if(b.dataset.si)signInstr(b.dataset.si);
+  if(b.dataset.dl){const [rid,wid]=b.dataset.dl.split('|');const r=db.records.find(x=>x.id===rid),w=r.workers.find(x=>x.id===wid);download(`${fmtD(r.date)}_${w.fio}.cms`,Uint8Array.from(atob(w.sig.cms),c=>c.charCodeAt(0)),'application/pkcs7-signature');download(`${fmtD(r.date)}_${w.fio}.txt`,w.sig.doc,'text/plain')}
+  if(b.dataset.del)confirmBox('Удалить черновик записи?',()=>{db.records=db.records.filter(r=>r.id!==b.dataset.del);save();render()})});
+$('#flt').addEventListener('change',render);$('#q').addEventListener('input',render);
+
+/* ---------- печать ---------- */
+$('#print-btn').addEventListener('click',()=>{const f=$('#flt').value==='intro'?'intro':'work';
+  const rows=[];db.records.filter(r=>kindOf(r)===f).slice().reverse().forEach(r=>r.workers.forEach(w=>rows.push({r,w})));
+  $('#print').innerHTML=`<h2>${f==='intro'?'Журнал регистрации вводного инструктажа':'Журнал регистрации инструктажей на рабочем месте'}</h2><p style="text-align:center">АО «КазТрансОйл», Карагандинское нефтепроводное управление. Записи удостоверены ЭЦП.</p>
+  <table><thead><tr><th>№</th><th>Дата</th><th>ФИО инструктируемого</th><th>Год рожд.</th><th>Профессия, должность</th>${f==='work'?'<th>Вид инструктажа</th><th>Причина внепланового</th>':''}<th>Инструкции</th><th>ФИО, должность инструктирующего</th><th>Знания</th><th>Подпись инструктируемого</th><th>Подпись инструктирующего</th></tr></thead><tbody>
+  ${rows.map(({r,w},i)=>`<tr><td>${i+1}</td><td>${esc(fmtD(r.date))}</td><td>${esc(w.fio)}</td><td>${esc(w.birthYear)}</td><td>${esc(w.profession)}</td>${f==='work'?`<td>${esc(r.type)}</td><td>${esc(r.reason)}</td>`:''}<td>${esc(r.instructions)}</td><td>${esc(r.instructor.fio)}, ${esc(r.instructor.position)}</td><td>${w.knowledge?'проверены':''}</td><td>${stamp(w.sig)}</td><td>${stamp(r.instructorSig)}</td></tr>`).join('')}</tbody></table>`;
+  window.print()});
+
+/* ---------- выгрузка в Excel (.xlsx без внешних библиотек) ---------- */
+const crcT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=crcT[(c^b[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0};
+const zipStore=files=>{const enc=new TextEncoder(),parts=[],cen=[];let off=0;const d=new Date();
+  const tm=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1),dt=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  for(const f of files){const nm=enc.encode(f.name),data=enc.encode(f.text),crc=crc32(data);
+    const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(10,tm,true);h.setUint16(12,dt,true);h.setUint32(14,crc,true);h.setUint32(18,data.length,true);h.setUint32(22,data.length,true);h.setUint16(26,nm.length,true);
+    parts.push(new Uint8Array(h.buffer),nm,data);
+    const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(12,tm,true);c.setUint16(14,dt,true);c.setUint32(16,crc,true);c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+    cen.push(new Uint8Array(c.buffer),nm);off+=30+nm.length+data.length}
+  const size=cen.reduce((s,a)=>s+a.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,size,true);e.setUint32(16,off,true);
+  return new Blob([...parts,...cen,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})};
+const xe=v=>String(v??'').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const colL=n=>{let s='';n++;while(n){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s};
+const sigTxt=s=>{if(!s)return'не подписано';const who=[s.signer.cn,s.signer.gn].filter(Boolean).join(' ');
+  return(s.demo?'ДЕМО, без ЭЦП: ':'ЭЦП: ')+who+(s.signer.iin?', '+maskIIN(s.signer.iin):'')+', '+fmtDT(s.signer.time||s.at)+(s.check==='bad'?' (не совпадает с работником)':s.check==='warn'?' (требует ручной сверки)':s.check==='name'?' (сверено по ФИО, без ИИН)':'')};
+const sheetXml=(title,sub,head,widths,rows)=>{const last=colL(head.length-1),hr=4,lr=hr+rows.length;
+  const cell=(r,c,v,s)=>typeof v==='number'?`<c r="${colL(c)}${r}" s="${s}"><v>${v}</v></c>`:`<c r="${colL(c)}${r}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>`;
+  const row=(r,vals,s,ht)=>`<row r="${r}"${ht?` ht="${ht}" customHeight="1"`:''}>${vals.map((v,c)=>cell(r,c,v,s)).join('')}</row>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${last}${Math.max(lr,hr)}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="${hr}" topLeftCell="A${hr+1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${row(1,[title],1,22)}${row(2,[sub],4)}${row(hr,head,2,48)}${rows.map((v,i)=>row(hr+1+i,v,3)).join('')}</sheetData>${rows.length?`<autoFilter ref="A${hr}:${last}${lr}"/>`:''}<mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`};
+const introXml=(recs)=>{const cols=['A','B','C','D','E','F','G','H'],rowsX=[],merges=[];let r=0;
+  const cell=(ref,v,s)=>v===''||v===null||v===undefined?`<c r="${ref}" s="${s}"/>`:typeof v==='number'?`<c r="${ref}" s="${s}"><v>${v}</v></c>`:`<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>`;
+  const line=(cells,ht)=>{r++;rowsX.push(`<row r="${r}"${ht?` ht="${ht}" customHeight="1"`:''}>${cells.map(([c,v,s])=>cell(c+r,v,s)).join('')}</row>`);return r};
+  const span=(c1,c2,v,s,ht)=>{const a=cols.indexOf(c1),b=cols.indexOf(c2),rr=line(cols.slice(a,b+1).map((c,i)=>[c,i?'':v,s]),ht);if(b>a)merges.push(`${c1}${rr}:${c2}${rr}`);return rr};
+  ['Приложение 16','к Правилам и срокам','проведения обучения,','инструктирования и проверок','знаний по вопросам безопасности','и охраны труда работников,','руководителей и лиц,','ответственных за обеспечение','безопасности и охраны труда'].forEach(x=>span('F','H',x,5));
+  line([]);span('A','H','ЖУРНАЛ',6,20);span('A','H','регистрации вводного инструктажа',6,18);
+  span('B','G','АО «КазТрансОйл», Карагандинское нефтепроводное управление',7,20);span('B','G','(организация, предприятие, учебное заведение)',8);
+  line([]);const dates=recs.map(x=>x.date).sort();
+  span('A','D',`Начат ${dates.length?fmtD(dates[0]):'________________'} г.`,9);span('A','D','Окончен ________________ г.',9);line([]);
+  const h1=line([['A','Дата',10],['B','Ф.И.О. (при его наличии) инструктируемого',10],['C','Год рождения',10],['D','Профессия, должность инструктируемого',10],['E','Место работы',10],['F','Подпись инструктируемого',10],['G','Инструктаж провел',11],['H','',11]],32);
+  const h2=line([['A','',10],['B','',10],['C','',10],['D','',10],['E','',10],['F','',10],['G','подпись',10],['H','Ф.И.О. (при его наличии)',10]],32);
+  ['A','B','C','D','E','F'].forEach(c=>merges.push(`${c}${h1}:${c}${h2}`));merges.push(`G${h1}:H${h1}`);
+  const hn=line(cols.map((c,i)=>[c,i+1,11]));
+  recs.slice().sort((a,b)=>(a.date+a.created).localeCompare(b.date+b.created)).forEach(x=>x.workers.forEach(w=>
+    line([['A',fmtD(x.date),12],['B',w.fio,12],['C',w.birthYear?Number(w.birthYear)||w.birthYear:'',12],['D',w.profession,12],['E',x.unit,12],['F',sigTxt(w.sig),12],['G',sigTxt(x.instructorSig),12],['H',x.instructor.fio,12]])));
+  if(r===hn)line(cols.map(c=>[c,'',12]));
+  const widths=[11,28,11,28,26,36,36,24];
+  return{last:r,hn,h1,xml:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:H${r}"/><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${hn}" topLeftCell="A${hn+1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rowsX.join('')}</sheetData><mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join('')}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`}};
+const buildXlsx=()=>{const now=new Date(),stamp=now.toLocaleDateString('ru-RU')+' '+now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  const sub=`АО «КазТрансОйл», Карагандинское нефтепроводное управление. Выгрузка из электронного журнала ${stamp}. Записи удостоверены ЭЦП, ИИН показан частично.`;
+  const status=r=>isDemoRec(r)?'ДЕМО, не имеет силы':r.instructorSig?'Закрыта':`Открыта, подписано ${r.workers.filter(w=>w.sig).length} из ${r.workers.length}`;
+  const defs=[
+    {kind:'work',name:'На рабочем месте (Прил. 17)',title:'Журнал регистрации инструктажей на рабочем месте',
+     head:['№','Дата инструктажа','ФИО инструктируемого','Год рождения','Профессия, должность','Подразделение','Вид инструктажа','Причина внепланового (целевого) инструктажа','Инструкции','ФИО, должность инструктирующего','Проверка знаний','Подпись инструктируемого','Подпись инструктирующего','Статус записи'],
+     widths:[5,12,30,9,26,28,13,24,36,32,14,44,44,16]},
+    {kind:'intro',name:'Вводный (Прил. 16)',title:'Журнал регистрации вводного инструктажа',
+     head:['№','Дата инструктажа','ФИО инструктируемого','Год рождения','Профессия, должность','Подразделение','Инструкции','ФИО, должность инструктирующего','Проверка знаний','Подпись инструктируемого','Подпись инструктирующего','Статус записи'],
+     widths:[5,12,30,9,26,28,36,32,14,44,44,16]}];
+  const sheets=defs.map(d=>{let n=0;const rows=[];
+    db.records.filter(r=>kindOf(r)===d.kind).slice().sort((a,b)=>(a.date+a.created).localeCompare(b.date+b.created)).forEach(r=>r.workers.forEach(w=>{n++;
+      const base=[n,fmtD(r.date),w.fio,w.birthYear?Number(w.birthYear)||w.birthYear:'',w.profession,r.unit];
+      const mid=d.kind==='work'?[r.type,r.reason]:[];
+      rows.push([...base,...mid,r.instructions,[r.instructor.fio,r.instructor.position].filter(Boolean).join(', '),w.knowledge?'знания проверены':'не проводилась',sigTxt(w.sig),sigTxt(r.instructorSig),status(r)])}));
+    return{...d,rows,xml:sheetXml(d.title,sub,d.head,d.widths,rows)}});
+  const iS=sheets.find(s=>s.kind==='intro');if(iS){const x=introXml(db.records.filter(r=>kindOf(r)==='intro'));iS.xml=x.xml;iS.noFilter=true;iS.printRows=`$${x.h1}:$${x.hn}`}
+  const dl=dueList();
+  if(dl.length){const head=['№','ФИО','Таб. №','Должность','Подразделение','Последний инструктаж','Вид','Повторный до','Статус'],widths=[5,32,10,30,34,14,13,14,26];
+    const rows=dl.map((p,i)=>[i+1,p.fio,p.tab||'',p.position,p.unit,p.last?fmtD(p.last.date):'',p.last?p.last.type:'',p.due?fmtD(p.due):'',stText(p)]);
+    sheets.push({name:'Сроки повторного',head,widths,rows,xml:sheetXml('Сроки повторного инструктажа',`${ruleText()} Расчет на ${stamp}. «Нет записей»: повторный инструктаж в электронном журнале еще не проводился.`,head,widths,rows)})}
+  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const files=[
+    {name:'[Content_Types].xml',text:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`},
+    {name:'_rels/.rels',text:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+    {name:'xl/workbook.xml',text:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${ns}" xmlns:r="${rel}"><sheets>${sheets.map((s,i)=>`<sheet name="${xe(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets><definedNames>${sheets.map((s,i)=>(s.rows.length&&!s.noFilter?`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xe(s.name)}'!$A$4:$${colL(s.head.length-1)}$${4+s.rows.length}</definedName>`:'')+`<definedName name="_xlnm.Print_Titles" localSheetId="${i}">'${xe(s.name)}'!${s.printRows||'$4:$4'}</definedName>`).join('')}</definedNames></workbook>`},
+    {name:'xl/_rels/workbook.xml.rels',text:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${rel}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length+1}" Type="${rel}/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml',text:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${ns}"><fonts count="6"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font><font><sz val="11"/><name val="Times New Roman"/><family val="1"/></font><font><b/><sz val="12"/><name val="Times New Roman"/><family val="1"/></font><font><sz val="9"/><name val="Times New Roman"/><family val="1"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9E5DC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="13"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right"/></xf><xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="bottom"/></xf><xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`},
+    ...sheets.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`,text:s.xml}))];
+  return{blob:zipStore(files),count:sheets.reduce((n,s)=>n+s.rows.length,0)}};
+$('#xlsx-btn').addEventListener('click',()=>{if(!db.records.length){toast('В журнале пока нет записей');return}
+  const{blob,count}=buildXlsx();download(`журнал_инструктажей_${new Date().toISOString().slice(0,10)}.xlsx`,blob,blob.type);toast(`Выгружено строк: ${count}`)});
+
+/* ---------- архив ---------- */
+const download=(name,data,type)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name.replace(/[\\/:*?"<>|]/g,'_');document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)};
+$('#export').addEventListener('click',()=>{const _d=new Date();download(`журнал_инструктажей_${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}.json`,JSON.stringify(db,null,1),'application/json');dirty=false});
+$('#import').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.records))throw 0;const res=mergeRecords(d.records);save();render();
+    let st='';if(Array.isArray(d.staff)&&d.staff.length){const r=mergeStaff(d.staff.filter(s=>s&&s.fio).map(s=>({id:String(s.id||uid()),fio:String(s.fio),iin:String(s.iin||''),tab:String(s.tab||''),birthYear:String(s.birthYear||''),position:String(s.position||''),unit:String(s.unit||'')})),false);st=`, работников в списке персонала: +${r.add}`}
+    toast(`Новых записей: ${res.add}, дополнено: ${res.upd}`+(res.skip?`, пропущено (конфликт закрытых записей или ошибка формата): ${res.skip}`:'')+st)}catch(err){toast('Файл не похож на архив журнала')}e.target.value=''});
+const sigN=r=>r.workers.filter(w=>w.sig).length;
+const normRec=r=>{if(!r||typeof r!=='object'||!r.id||!Array.isArray(r.workers))return null;r.id=String(r.id);r.created=String(r.created||new Date().toISOString());
+  r.instructor=Object.assign({fio:'',position:'',iin:''},r.instructor||{});r.instructorSig=r.instructorSig||null;
+  for(const k of['unit','date','type','reason','instructions'])r[k]=String(r[k]??'');
+  r.workers=r.workers.filter(w=>w&&w.fio).map(w=>Object.assign({id:uid(),birthYear:'',profession:'',iin:'',knowledge:false,sid:'',sig:null},w,{id:String(w.id||uid()),fio:String(w.fio)}));return r};
+/* объединение по id: закрытая запись важнее открытой; в открытую дописываются недостающие подписи работников */
+const mergeRecords=list=>{let add=0,upd=0,skip=0;const by=new Map(db.records.map(r=>[r.id,r]));
+  for(const raw of list){const r=normRec(raw);if(!r){skip++;continue}const ex=by.get(r.id);
+    if(!ex){db.records.push(r);by.set(r.id,r);add++;continue}
+    if(ex.instructorSig){if(r.instructorSig&&JSON.stringify(r)!==JSON.stringify(ex))skip++;continue}
+    if(r.instructorSig){const i=db.records.indexOf(ex);db.records[i]=r;by.set(r.id,r);upd++;continue}
+    let ch=false;const wm=new Map(ex.workers.map(w=>[w.id,w]));
+    for(const w of r.workers){const e=wm.get(w.id);
+      if(!e){ex.workers.push(w);ch=true;continue}
+      if(w.sig&&!e.sig){e.sig=w.sig;ch=true}
+      else if(w.sig&&e.sig&&w.sig.at>e.sig.at){(e.sigHistory=e.sigHistory||[]).push({...e.sig,replacedAt:w.sig.at});e.sig=w.sig;ch=true}}
+    if(ch)upd++}
+  db.records.sort((a,b)=>b.created.localeCompare(a.created));return{add,upd,skip}};
+const confirmBox=(text,yes)=>{const c=$('#cfm');$('#c-text').textContent=text;c.showModal();$('#c-yes').onclick=()=>{c.close();yes()};$('#c-no').onclick=()=>c.close()};
+$('#wipe').addEventListener('click',()=>{const nc=db.records.filter(r=>r.instructorSig).length;if(dirty&&db.records.length){toast('Сначала сохраните архив кнопкой «Сохранить архив (.json)», затем очистите журнал.');return}confirmBox(`Удалить все записи из этого браузера (${db.records.length}, из них закрытых ${nc})? Архив сохранен.`,()=>{db.records=[];save();render();toast('Журнал очищен')})});
+/* ---------- вкладка «Персонал» ---------- */
+const updLists=()=>{$('#staff-names').innerHTML=db.staff.map(s=>`<option value="${esc(s.fio)}">${esc([s.position,s.unit].filter(Boolean).join(', '))}</option>`).join('');
+  const base=['Аппарат при руководстве КарНУ','ГНПС «Атасу»','НПС «Степное»','АВП «Трудовое»'];$('#units').innerHTML=[...new Set([...base,...units()])].map(u=>`<option value="${esc(u)}"></option>`).join('');
+  $('#scnt').textContent=db.staff.length?`(${db.staff.length})`:''};
+const renderStaff=()=>{const us=$('#s-unit'),cur=us.value,ul=units();
+  us.innerHTML=`<option value="">Все подразделения (${db.staff.length})</option>`+ul.map(u=>`<option value="${esc(u)}">${esc(uLabel(u))} (${db.staff.filter(s=>unitMatch(s,u)).length})</option>`).join('');us.value=ul.includes(cur)?cur:'';
+  const q=$('#s-q').value.trim().toLowerCase(),u=us.value,list=db.staff.filter(s=>unitMatch(s,u)&&textMatch(s,q));
+  $('#s-info').textContent=db.staff.length?`Найдено: ${list.length}`:'';
+  $('#stable tbody').innerHTML=db.staff.length?list.slice(0,300).map(s=>`<tr><td>${esc(s.fio)}</td><td>${esc(s.tab||'')}</td><td>${esc(s.iin)}</td><td>${esc(s.birthYear||byFromIIN(s.iin))}</td><td>${esc(s.position)}</td><td>${esc(s.unit)}</td><td><button class="btn ghost small" data-sdel="${esc(s.id)}" aria-label="Удалить из списка">✕</button></td></tr>`).join('')+(list.length>300?`<tr><td colspan="6" data-l="" class="sub">Показаны первые 300 из ${list.length}. Уточните поиск.</td></tr>`:'')
+    :'<tr><td colspan="6" data-l=""><div class="empty">Список пуст. Загрузите выгрузку из отдела кадров или скачайте шаблон и заполните его.</div></td></tr>'};
+const mergeStaff=(list,replace)=>{if(replace){db.staff=[];sel.clear()}const bi=new Map(),bt=new Map(),bn=new Map(),reg=s=>{if(s.iin)bi.set(s.iin,s);if(s.tab)bt.set(s.tab,s);bn.set(nameKey(s),s)};db.staff.forEach(reg);let add=0,upd=0;
+  for(const s of list){let ex=(s.iin&&bi.get(s.iin))||(s.tab&&bt.get(s.tab));if(!ex){const c=bn.get(nameKey(s));if(c&&!((s.tab&&c.tab&&s.tab!==c.tab)||(s.iin&&c.iin&&s.iin!==c.iin)))ex=c}if(ex){for(const k of Object.keys(s))if(k!=='id'&&s[k])ex[k]=s[k];reg(ex);upd++}else{db.staff.push(s);reg(s);add++}}
+  db.staff.sort((a,b)=>a.fio.localeCompare(b.fio,'ru'));save();updLists();renderStaff();renderPicker();return{add,upd}};
+const loadXLSX=()=>window.XLSX?Promise.resolve(window.XLSX):new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>res(window.XLSX);s.onerror=()=>rej(new Error('Не удалось загрузить модуль чтения Excel (нужен интернет). Сохраните файл в Excel как CSV и загрузите его.'));document.head.appendChild(s)});
+const decode=buf=>{let t=new TextDecoder('utf-8').decode(buf);if(t.includes('�'))t=new TextDecoder('windows-1251').decode(buf);return t.replace(/^﻿/,'')};
+const parseCSV=t=>{const head=t.split(/\r?\n/).slice(0,10).join('\n');const d=[';','\t',','].map(c=>[c,head.split(c).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+    else if(ch==='"')q=true;else if(ch===d){row.push(f);f=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''}else f+=ch}
+  if(f||row.length){row.push(f);rows.push(row)}return rows};
+const toStaff=rows=>{const hi=rows.slice(0,15).findIndex(r=>r.some(c=>/ф\.?\s*и\.?\s*о|фамил/i.test(String(c))));
+  if(hi<0)throw new Error('Не найдена строка заголовков. В файле должен быть столбец «ФИО» или «Фамилия», «Имя», «Отчество».');
+  const h=rows[hi].map(c=>String(c).toLowerCase().trim()),col=re=>h.findIndex(x=>re.test(x));
+  const c={fio:col(/ф\.?\s*и\.?\s*о/),sur:col(/фамил/),nam:col(/^имя/),pat:col(/отчеств/),iin:col(/иин|iin/),tab:col(/табел/),by:col(/рожд/),pos:col(/должн|профес/),unit:col(/подразд|участ|объект|служб|отдел|цех|структур/)};
+  if(c.fio<0&&c.sur>=0&&c.nam<0&&c.pat<0)c.fio=c.sur;
+  const g=(r,i)=>i<0||r[i]===undefined||r[i]===null?'':r[i],out=[];
+  for(const r of rows.slice(hi+1)){let fio=String(g(r,c.fio)).trim();if(!fio)fio=[g(r,c.sur),g(r,c.nam),g(r,c.pat)].map(x=>String(x).trim()).filter(Boolean).join(' ');fio=fio.replace(/\s+/g,' ');if(!fio)continue;
+    const iin=normIIN(g(r,c.iin)),bv=g(r,c.by);let by='';if(bv instanceof Date)by=String(bv.getFullYear());else{const m=String(bv).match(/(19|20)\d{2}/);if(m)by=m[0]}
+    const td=String(g(r,c.tab)).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+    out.push({id:uid(),fio,tab:td,iin:iinOk(iin)?iin:'',birthYear:by||byFromIIN(iin),position:String(g(r,c.pos)).trim(),unit:String(g(r,c.unit)).trim()})}
+  return{list:out,cols:c}};
+$('#staff-file').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const msg=$('#s-msg');msg.textContent='Читаю файл...';
+  try{let rows;
+    if(/\.xlsx?$/i.test(f.name)){const X=await loadXLSX();const wb=X.read(await f.arrayBuffer(),{type:'array',cellDates:true});rows=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''})}
+    else rows=parseCSV(decode(await f.arrayBuffer()));
+    const{list,cols}=toStaff(rows);if(!list.length)throw new Error('В файле не найдено ни одного работника.');
+    const r=mergeStaff(list,$('#staff-replace').checked),noIIN=list.filter(s=>!s.iin).length;
+    const miss=[cols.iin<0?'ИИН':'',cols.pos<0?'должность':'',cols.unit<0?'подразделение':''].filter(Boolean);
+    msg.textContent='';toast(`Список загружен: новых ${r.add}, обновлено ${r.upd}`);
+    if(miss.length||noIIN)msg.textContent=(miss.length?`В файле не найдены столбцы: ${miss.join(', ')}. `:'')+(noIIN&&cols.iin>=0?`У ${noIIN} чел. нет корректного ИИН (12 цифр с верной контрольной цифрой).`:'')}
+  catch(err){msg.textContent=err.message||'Не удалось прочитать файл'}});
+$('#staff-tpl').addEventListener('click',()=>download('шаблон_списка_персонала.csv','﻿ФИО;ИИН;Табельный номер;Год рождения;Должность (профессия);Подразделение\r\n','text/csv'));
+$('#n-add').addEventListener('click',()=>{const fio=$('#n-fio').value.trim().replace(/\s+/g,' '),iin=$('#n-iin').value.trim(),err=$('#n-err');err.textContent='';
+  if(!fio){err.textContent='Укажите ФИО';return}if(iin&&!iinOk(iin)){err.textContent='ИИН должен быть из 12 цифр с верной контрольной цифрой';return}
+  mergeStaff([{id:uid(),fio,iin,birthYear:byFromIIN(iin),position:$('#n-pos').value.trim(),unit:$('#n-unit').value.trim()}],false);['#n-fio','#n-iin','#n-pos'].forEach(s=>$(s).value='');toast('Работник добавлен в список')});
+$('#stable').addEventListener('click',e=>{const b=e.target.closest('button[data-sdel]');if(!b)return;db.staff=db.staff.filter(s=>s.id!==b.dataset.sdel);sel.delete(b.dataset.sdel);save();updLists();renderStaff();renderPicker()});
+$('#staff-wipe').addEventListener('click',()=>confirmBox('Удалить весь список персонала из этого браузера? Записи журнала останутся.',()=>{db.staff=[];sel.clear();save();updLists();renderStaff();renderPicker()}));
+$('#s-unit').addEventListener('change',renderStaff);$('#s-q').addEventListener('input',renderStaff);
+updLists();renderPicker();
+
+/* ---------- сроки повторного инструктажа ---------- */
+db.settings=Object.assign({period:6,lead:14,unplanned:false,notify:false,lastNotify:''},db.settings||{});
+const dParse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const dIso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const addMonths=(s,n)=>{const d=dParse(s),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return dIso(d)};
+const todayIso=()=>dIso(new Date());
+const daysBetween=(a,b)=>Math.round((dParse(b)-dParse(a))/86400000);
+const perM=()=>Math.min(12,Math.max(1,parseInt(db.settings.period)||6)),leadD=()=>Math.min(90,Math.max(1,parseInt(db.settings.lead)||14));
+const countTypes=()=>db.settings.unplanned?['Первичный','Повторный','Внеплановый','Целевой']:['Первичный','Повторный'];
+const personKey=w=>{if(w.sid&&db.staff.some(s=>s.id===w.sid))return w.sid;const s=(w.iin&&findByIIN(w.iin))||findByFio(w.fio);return s?s.id:'x:'+w.fio.trim().replace(/\s+/g,' ').toLowerCase()};
+const ORD={over:0,soon:1,ok:2,none:3};
+const dueList=()=>{const people=new Map(),types=countTypes();
+  db.staff.forEach(s=>people.set(s.id,{key:s.id,fio:s.fio,unit:s.unit,position:s.position,tab:s.tab||'',last:null}));
+  for(const r of db.records){if(!types.includes(r.type))continue;
+    for(const w of r.workers){if(!w.sig||w.sig.check==='bad'||w.sig.demo)continue;const k=personKey(w);
+      let p=people.get(k);if(!p){p={key:k,fio:w.fio,unit:r.unit,position:w.profession,tab:'',last:null};people.set(k,p)}
+      if(!p.last||r.date>p.last.date)p.last={date:r.date,type:r.type}}}
+  const t=todayIso(),per=perM(),lead=leadD();
+  return[...people.values()].map(p=>{if(!p.last)return{...p,due:'',days:null,status:'none'};const due=addMonths(p.last.date,per),d=daysBetween(t,due);return{...p,due,days:d,status:d<0?'over':d<=lead?'soon':'ok'}})
+    .sort((a,b)=>ORD[a.status]-ORD[b.status]||(a.due||'9').localeCompare(b.due||'9')||a.fio.localeCompare(b.fio,'ru'))};
+const ruleText=()=>perM()===6?'Повторный инструктаж не реже одного раза в полугодие (п. 62 Правил № 1019).':`Повторный инструктаж раз в ${perM()} мес. по настройке журнала (п. 62 Правил № 1019 требует не реже одного раза в полугодие).`;
+const stText=p=>p.status==='over'?`Просрочен на ${-p.days} дн.`:p.status==='soon'?(p.days===0?'Срок сегодня':`Осталось ${p.days} дн.`):p.status==='ok'?'В норме':'Нет записей в журнале';
+const unitsOf=list=>{const s=new Set();for(const x of list){if(!x.unit)continue;const p=x.unit.split(' / ');for(let i=1;i<=p.length;i++)s.add(p.slice(0,i).join(' / '))}return[...s].sort((a,b)=>a.localeCompare(b,'ru'))};
+const dueShown=()=>{const all=dueList(),u=$('#d-unit').value,q=$('#d-q').value.trim().toLowerCase(),f=$('#d-st').value,inU=all.filter(p=>unitMatch(p,u));
+  return{all,inU,list:inU.filter(p=>(f==='attn'?p.status==='over'||p.status==='soon':f==='all'||p.status===f)&&(!q||p.fio.toLowerCase().includes(q)||(p.tab||'').includes(q)))}};
+const renderDue=()=>{const us=$('#d-unit'),cur=us.value,all=dueList(),ul=unitsOf(all);
+  us.innerHTML=`<option value="">Все подразделения (${all.length})</option>`+ul.map(u=>`<option value="${esc(u)}">${esc(uLabel(u))} (${all.filter(p=>unitMatch(p,u)).length})</option>`).join('');us.value=ul.includes(cur)?cur:'';
+  const{inU,list}=dueShown(),n=k=>inU.filter(p=>p.status===k).length,f=$('#d-st').value;
+  $('#d-rule').textContent=`${ruleText()} Предупреждение за ${leadD()} дн. Расчет на ${fmtD(todayIso())}.`;
+  $('#d-tiles').innerHTML=[['over','Просрочено'],['soon',`В ближайшие ${leadD()} дн.`],['ok','В норме'],['none','Нет записей']].map(([k,l])=>`<button class="tile ${k}" data-f="${k}" aria-pressed="${f===k}"><b>${n(k)}</b><span>${l}</span></button>`).join('');
+  $('#dtable tbody').innerHTML=list.length?list.slice(0,400).map(p=>`<tr><td>${esc(p.fio)}${p.tab?`<br><small class="sub">таб. № ${esc(p.tab)}</small>`:''}</td><td>${esc(p.unit)}</td><td>${esc(p.position)}</td><td>${p.last?esc(fmtD(p.last.date))+', '+esc(p.last.type.toLowerCase()):''}</td><td>${p.due?esc(fmtD(p.due)):''}</td><td><span class="st ${p.status}">${esc(stText(p))}</span></td></tr>`).join('')+(list.length>400?`<tr><td colspan="6" data-l="" class="sub">Показаны первые 400 из ${list.length}. Уточните фильтр.</td></tr>`:'')
+    :`<tr><td colspan="6" data-l=""><div class="empty">${all.length?'Нет работников с таким статусом.':'Загрузите список персонала или проведите первые инструктажи.'}</div></td></tr>`;
+  $('#d-mail').disabled=!$('#d-unit').value;$('#d-mail').title=$('#d-unit').value?'':'Выберите подразделение';
+  $('#d-note').textContent=`Напоминания из файла .ics срабатывают в Outlook, даже когда журнал закрыт: событие ставится на дату срока с напоминанием за ${leadD()} дн., просроченные ставятся на сегодня. Выгружаются работники выбранного подразделения, у которых есть срок. «Нет записей» значит, что повторный инструктаж в электронном журнале еще не проводился: такие работники ведутся по бумажному журналу.`};
+const updDue=()=>{const all=dueList(),o=all.filter(p=>p.status==='over').length,s=all.filter(p=>p.status==='soon').length,al=$('#due-alert');
+  $('#dcnt').textContent=o+s?`(${o+s})`:'';
+  if(!o&&!s){al.hidden=true;return}
+  al.hidden=false;al.className='alert'+(o?' bad':'');
+  al.innerHTML=`<span>Повторный инструктаж: ${o?`<b>просрочен у ${o} чел.</b>`:''}${o&&s?', ':''}${s?`в ближайшие ${leadD()} дн. у ${s} чел.`:''}</span><button class="btn small" id="due-open">Открыть сроки</button>`;
+  $('#due-open').onclick=()=>{$('#d-st').value='attn';show('due')}};
+$('#d-tiles').addEventListener('click',e=>{const b=e.target.closest('button[data-f]');if(!b)return;const s=$('#d-st');s.value=s.value===b.dataset.f?'attn':b.dataset.f;renderDue()});
+['#d-unit','#d-st'].forEach(s=>$(s).addEventListener('change',renderDue));$('#d-q').addEventListener('input',renderDue);
+/* календарь .ics */
+const icsEsc=s=>String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+const icsFold=line=>{const enc=new TextEncoder();let out='',cur='',n=0;for(const ch of line){const b=enc.encode(ch).length;if(n+b>73){out+=cur+'\r\n ';cur='';n=1}cur+=ch;n+=b}return out+cur};
+const hash36=s=>{let h=5381;for(const c of s)h=((h<<5)+h+c.codePointAt(0))>>>0;return h.toString(36)};
+const makeIcs=list=>{const t=todayIso(),lead=leadD(),groups=new Map();
+  for(const p of list){if(!p.due)continue;const over=p.status==='over',date=over?t:p.due,k=p.unit+'|'+date+'|'+over;if(!groups.has(k))groups.set(k,{unit:p.unit,date,over,people:[]});groups.get(k).people.push(p)}
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,''),L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//KarNU//Electronic instruction journal//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+  for(const g of groups.values()){const d=g.date.replace(/-/g,''),nd=dIso(new Date(dParse(g.date).getFullYear(),dParse(g.date).getMonth(),dParse(g.date).getDate()+1)).replace(/-/g,'');
+    const names=g.people.map((p,i)=>`${i+1}. ${p.fio}${p.position?', '+p.position:''}: до ${fmtD(p.due)}`).join('\n'),unit=g.unit||'без подразделения';
+    L.push('BEGIN:VEVENT','UID:rep-'+hash36(g.unit+'|'+g.date+'|'+g.over)+'@karnu-journal','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+d,'DTEND;VALUE=DATE:'+nd,
+      'SUMMARY:'+icsEsc((g.over?'Просрочен повторный инструктаж: ':'Повторный инструктаж: ')+unit+` (${g.people.length} чел.)`),
+      'DESCRIPTION:'+icsEsc(`Срок повторного инструктажа по БиОТ (п. 62 Правил № 1019).\n\n${names}\n\nИсточник: электронный журнал инструктажей КарНУ`),
+      'TRANSP:TRANSPARENT','BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Повторный инструктаж: '+unit),'TRIGGER:'+(g.over?'PT9H':`-P${lead}D`),'END:VALARM','END:VEVENT')}
+  L.push('END:VCALENDAR');return{text:L.map(icsFold).join('\r\n')+'\r\n',n:groups.size}};
+$('#d-ics').addEventListener('click',()=>{const{inU}=dueShown(),{text,n}=makeIcs(inU);if(!n){toast('Нет работников со сроком повторного инструктажа');return}
+  download(`повторный_инструктаж_${todayIso()}.ics`,text,'text/calendar');toast(`Событий в календаре: ${n}. Откройте файл в Outlook.`)});
+/* письмо и копирование */
+const dueText=list=>list.filter(p=>p.due).map((p,i)=>`${i+1}. ${p.fio}${p.position?', '+p.position:''}: до ${fmtD(p.due)}${p.status==='over'?` (просрочен на ${-p.days} дн.)`:''}`);
+$('#d-mail').addEventListener('click',()=>{const u=$('#d-unit').value;if(!u)return;const{list}=dueShown(),lines=dueText(list);
+  if(!lines.length){toast('В выбранном подразделении нет работников с таким статусом');return}
+  let body=`Срок повторного инструктажа по БиОТ. ${ruleText()}\r\n\r\n${lines.join('\r\n')}\r\n\r\nИсточник: электронный журнал инструктажей КарНУ.`;
+  if(body.length>1600)body=body.slice(0,1500).replace(/\r\n[^\r\n]*$/,'')+`\r\n...\r\nВсего ${lines.length} чел. Полный список в выгрузке Excel, лист «Сроки повторного».`;
+  const a=document.createElement('a');a.href=`mailto:?subject=${encodeURIComponent('Повторный инструктаж: '+u)}&body=${encodeURIComponent(body)}`;document.body.appendChild(a);a.click();a.remove()});
+$('#d-copy').addEventListener('click',async()=>{const{list}=dueShown(),lines=dueText(list);if(!lines.length){toast('Список пуст');return}
+  const txt=`Повторный инструктаж${$('#d-unit').value?': '+$('#d-unit').value:''}\n${lines.join('\n')}`;
+  try{await navigator.clipboard.writeText(txt);toast('Список скопирован')}catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('Список скопирован')}catch(e2){toast('Не удалось скопировать')}ta.remove()}});
+/* настройки и системное уведомление */
+const sp=$('#s-period'),sl=$('#s-lead'),su=$('#s-unpl'),sn=$('#s-notify');
+sp.value=perM();sl.value=leadD();su.checked=!!db.settings.unplanned;sn.checked=!!db.settings.notify;
+sp.addEventListener('change',()=>{db.settings.period=parseInt(sp.value)||6;db.settings.period=perM();sp.value=perM();save()});
+sl.addEventListener('change',()=>{db.settings.lead=parseInt(sl.value)||14;sl.value=leadD();save()});
+su.addEventListener('change',()=>{db.settings.unplanned=su.checked;save()});
+const canNotify='Notification' in window;if(!canNotify)$('#s-notify-box').hidden=true;
+const maybeNotify=()=>{if(!canNotify||!db.settings.notify||Notification.permission!=='granted'||db.settings.lastNotify===todayIso())return;
+  const all=dueList(),o=all.filter(p=>p.status==='over').length,s=all.filter(p=>p.status==='soon').length;if(!o&&!s)return;
+  try{new Notification('Повторный инструктаж',{body:[o?`Просрочен у ${o} чел.`:'',s?`В ближайшие ${leadD()} дн. у ${s} чел.`:''].filter(Boolean).join(' ')});db.settings.lastNotify=todayIso();save()}catch(e){}};
+sn.addEventListener('change',async()=>{if(sn.checked&&canNotify){let r='denied';try{r=await Notification.requestPermission()}catch(e){}
+  if(r!=='granted'){sn.checked=false;toast('Браузер не разрешил уведомления для этого файла');return}}db.settings.notify=sn.checked;db.settings.lastNotify='';save();maybeNotify()});
+updDue();maybeNotify();setInterval(()=>{updDue();maybeNotify()},3600000);
+
+
+/* ---------- общий сервер журнала (v1.2) ---------- */
+{
+const SKEY='kto-instr-journal-server';
+let srv={url:'',token:'',user:null,rev:0,pushed:{},lastSync:''};
+try{Object.assign(srv,JSON.parse(localStorage.getItem(SKEY)||'{}'))}catch(e){}
+if(!srv.url&&location.protocol==='https:')srv.url=location.origin;
+const ssave=()=>{try{localStorage.setItem(SKEY,JSON.stringify(srv))}catch(e){}};
+const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v??null);
+const h=r=>{const c=canon(r);return hash36(c)+'.'+c.length.toString(36)};
+const ROLE={instructor:'инструктирующий',otos:'инженер ОТОС',admin:'администратор'};
+const api=async(method,p,body)=>{let r;try{r=await fetch(srv.url.replace(/\/+$/,'')+p,{method,headers:{'Content-Type':'application/json',...(srv.token?{Authorization:'Bearer '+srv.token}:{})},body:body?JSON.stringify(body):undefined})}catch(e){const er=new Error('Нет связи с сервером');er.net=true;throw er}
+  const j=await r.json().catch(()=>({}));if(r.status===401&&p!=='/api/login'){srv.token='';srv.user=null;ssave();draw()}if(!r.ok){const e=new Error(j.error||('Ошибка сервера '+r.status));e.body=j;throw e}return j};
+const badge=t=>{$('#srv-badge').textContent=t};
+const draw=()=>{const on=!!srv.token;$('#srv-out').hidden=on;$('#srv-in').hidden=!on;$('#srv-url').value=srv.url;
+  if(on){const u=srv.user||{};$('#srv-state').innerHTML=`Вход выполнен: <b>${esc(u.fio||u.login)}</b> (${esc(ROLE[u.role]||u.role)}), сервер ${esc(srv.url)}.<br><span class="sub">${srv.lastSync?'Последняя синхронизация: '+esc(fmtDT(srv.lastSync)):'Синхронизации еще не было'}</span>`;
+    $('#srv-staff-put').hidden=!(u.role==='otos'||u.role==='admin');badge(srv.lastSync?'· сервер: '+fmtDT(srv.lastSync):'· сервер')}else badge('')};
+$('#srv-go').addEventListener('click',async()=>{$('#srv-err').textContent='';let url=$('#srv-url').value.trim().replace(/\/+$/,'');if(url&&!/^https?:\/\//.test(url))url='https://'+url;
+  if(!url){$('#srv-err').textContent='Укажите адрес сервера';return}srv.url=url;
+  try{const j=await api('POST','/api/login',{login:$('#srv-login').value,password:$('#srv-pass').value,newPassword:$('#srv-new').value||undefined,device:'журнал на компьютере'});
+    Object.assign(srv,{token:j.token,user:j.user,rev:0,pushed:{}});ssave();$('#srv-pass').value=$('#srv-new').value='';$('#srv-new-box').hidden=true;draw();
+    if(!db.staff.length)await staffGet(true);await sync(true)}
+  catch(e){if(e.body&&e.body.mustChange)$('#srv-new-box').hidden=false;$('#srv-err').textContent=e.message}});
+$('#srv-exit').addEventListener('click',async()=>{try{await api('POST','/api/logout')}catch(e){}srv.token='';srv.user=null;ssave();draw();toast('Вы вышли. Записи остались в этом браузере.')});
+let busy=false,again=false;
+const sync=async loud=>{if(!srv.token)return;if(busy){again=true;return}busy=true;
+  try{
+    const pulled=await api('GET','/api/records?since='+(srv.rev||0));
+    const before=new Map(db.records.map(r=>[r.id,h(r)]));
+    if(pulled.records.length){mergeRecords(JSON.parse(JSON.stringify(pulled.records)));
+      for(const sr of pulled.records){const lr=db.records.find(x=>x.id===String(sr.id));if(lr&&canon(lr)===canon(normRec(JSON.parse(JSON.stringify(sr)))))srv.pushed[lr.id]=h(lr)}}
+    const fresh=pulled.records.filter(r=>!before.has(String(r.id))).length,chg=pulled.records.filter(r=>before.has(String(r.id))&&before.get(String(r.id))!==h(db.records.find(x=>x.id===String(r.id))||{})).length;
+    srv.rev=pulled.rev;
+    const out=db.records.filter(r=>srv.pushed[r.id]!==h(r));let conf=0,forb=0;
+    for(let i=0;i<out.length;i+=200){const part=out.slice(i,i+200);const res=await api('POST','/api/records',{records:part});
+      for(const x of res.results){const r=part.find(p=>p.id===x.id);if(!r)continue;if(x.status==='conflict')conf++;else if(x.status==='forbidden')forb++;else if(x.status!=='invalid')srv.pushed[r.id]=h(r)}}
+    srv.lastSync=new Date().toISOString();ssave();
+    if(fresh||chg){save();render()}
+    draw();
+    if(fresh||chg||loud||conf||forb)toast(`Сервер: новых записей ${fresh}, обновлено ${chg}, отправлено ${out.length-conf-forb}`+(conf?`. ВНИМАНИЕ: ${conf} закрытых записей отличаются от серверных, проверьте`:'')+(forb?`. Чужих записей не принято: ${forb}`:''));
+  }catch(e){if(loud||!e.net)toast('Сервер: '+e.message);badge(e.net?'· сервер недоступен, повторим позже':'· ошибка сервера')}
+  finally{busy=false;if(again){again=false;setTimeout(()=>sync(false),500)}}};
+const staffGet=async loud=>{const j=await api('GET','/api/staff');if(!j.staff.length){if(loud)toast('На сервере списка персонала пока нет');return}
+  const r=mergeStaff(j.staff.map(s=>({id:String(s.id||uid()),fio:String(s.fio),iin:String(s.iin||''),tab:String(s.tab||''),birthYear:String(s.birthYear||''),position:String(s.position||''),unit:String(s.unit||'')})),false);save();updLists();toast(`Список персонала с сервера: добавлено ${r.add}, обновлено ${r.upd}`)};
+$('#srv-sync').addEventListener('click',()=>sync(true));
+$('#srv-staff-get').addEventListener('click',()=>staffGet(true).catch(e=>toast('Сервер: '+e.message)));
+$('#srv-staff-put').addEventListener('click',async()=>{if(!db.staff.length){toast('Список персонала пуст');return}
+  try{const j=await api('PUT','/api/staff',{staff:db.staff});toast('На сервер отправлено работников: '+j.count)}catch(e){toast('Сервер: '+e.message)}});
+let tm=0;window.srvSoon=()=>{if(!srv.token)return;clearTimeout(tm);tm=setTimeout(()=>sync(false),4000)};
+window.addEventListener('online',()=>sync(false));
+setInterval(()=>sync(false),120000);
+draw();if(srv.token)sync(false);
+}
+const demo=$('#demo');demo.checked=!!db.demo;demo.addEventListener('change',()=>{db.demo=demo.checked;save();toast(db.demo?'Демо-режим включен':'Демо-режим выключен')});
+render();
+}
+</script>
+</body>
+</html>

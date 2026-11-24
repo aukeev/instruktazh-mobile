@@ -1,0 +1,35 @@
+# Запуск на сервере (из папки server):  docker compose up -d --build
+# Перед первым запуском скопируйте .env.example в .env и впишите свой домен.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY: "1"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://aukeev.github.io,null}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    expose:
+      - "8080"
+  caddy:
+    # веб-сервер с автоматическим HTTPS-сертификатом
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Укажите DOMAIN в файле .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:
