@@ -3,3 +3,4 @@ shots
 server/data
 server/backups
 server/.env
+server/node_modules

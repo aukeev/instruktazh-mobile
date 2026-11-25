@@ -1,0 +1,8 @@
+{
+  "name": "instruktazh-server",
+  "private": true,
+  "description": "Сервер журнала инструктажей. Библиотека Anthropic нужна только ИИ-помощнику.",
+  "scripts": { "start": "node --no-warnings server.js", "test": "node --test --no-warnings test/*.test.js" },
+  "engines": { "node": ">=22.5" },
+  "dependencies": { "@anthropic-ai/sdk": "1.8.0" }
+}

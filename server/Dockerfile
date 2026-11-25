@@ -3,13 +3,18 @@
 FROM node:22-alpine
 ENV NODE_ENV=production TZ=Asia/Almaty \
     DB_FILE=/data/journal.sqlite BACKUP_DIR=/backups \
-    PUBLIC_DIR=/app/public ADMIN_DIR=/app/admin PORT=8080
+    PUBLIC_DIR=/app/public ADMIN_DIR=/app/admin AI_DIR=/app/public/ai PORT=8080
 WORKDIR /app
-COPY server/store.js server/server.js server/cli.js ./
+# библиотека Anthropic для ИИ-помощника (единственная внешняя зависимость)
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY server/store.js server/server.js server/cli.js server/ai.js ./
 COPY server/admin ./admin
 # мобильное приложение и журнал раздаются этим же сервером
 COPY index.html app.js sigex.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png ./public/
 COPY journal ./public/journal
+# ИИ-помощник: тестовая страница /ai/, обезличивание, база знаний (Правила № 1019)
+COPY ai ./public/ai
 RUN mkdir -p /data /backups && chown -R node:node /data /backups
 USER node
 EXPOSE 8080
