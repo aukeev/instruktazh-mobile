@@ -8,7 +8,7 @@ WORKDIR /app
 COPY server/store.js server/server.js server/cli.js ./
 COPY server/admin ./admin
 # мобильное приложение и журнал раздаются этим же сервером
-COPY index.html app.js sigex.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png ./public/
+COPY index.html app.js sigex.js ezhi.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png ./public/
 COPY journal ./public/journal
 RUN mkdir -p /data /backups && chown -R node:node /data /backups
 USER node

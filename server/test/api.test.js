@@ -95,6 +95,10 @@ test('список персонала и CORS', async () => {
   assert.equal((await call('PUT', '/api/staff', { staff: [{ fio: 'Иванов Иван', iin: '900101300123', unit: 'ГНПС «Атасу»' }, { x: 1 }] }, to)).body.count, 1);
   const s = await call('GET', '/api/staff', null, ti);
   assert.equal(s.body.staff[0].fio, 'Иванов Иван');
+  assert.equal((await call('PUT', '/api/config', { config: { x: 1 } }, ti)).status, 403);
+  assert.equal((await call('GET', '/api/config', null, ti)).body.config, null);
+  assert.equal((await call('PUT', '/api/config', { config: { ezhi: { journals: [{ id: 'j1' }] } } }, to)).body.ok, true);
+  assert.equal((await call('GET', '/api/config', null, ti)).body.config.ezhi.journals[0].id, 'j1');
   const c = await call('GET', '/api/health', null, null, 'https://aukeev.github.io');
   assert.equal(c.headers.get('access-control-allow-origin'), 'https://aukeev.github.io');
   const c2 = await call('GET', '/api/health', null, null, 'https://evil.example');
