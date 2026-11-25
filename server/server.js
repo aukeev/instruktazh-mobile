@@ -1,6 +1,7 @@
 /* Сервер электронного журнала инструктажей.
-   Без внешних зависимостей: Node.js 22+ (http, crypto, встроенный SQLite).
-   API: /api/*, статика: / (мобильное приложение), /journal/ (журнал), /admin/ (пользователи). */
+   Сам журнал работает без внешних зависимостей: Node.js 22+ (http, crypto, встроенный SQLite).
+   API: /api/*, статика: / (мобильное приложение), /journal/ (журнал), /admin/ (пользователи), /ai/ (ИИ-помощник).
+   Внешняя библиотека одна: @anthropic-ai/sdk, и нужна она только ИИ-помощнику с ключом. */
 'use strict';
 process.removeAllListeners('warning'); // скрыть ExperimentalWarning про node:sqlite
 const http = require('node:http');
@@ -160,13 +161,16 @@ const routes = {
   'GET /api/stats': req => { need(auth(req), 'admin', 'otos'); return { records: db.prepare('SELECT COUNT(*) n, SUM(closed) closed FROM records').get(), users: db.prepare('SELECT role, COUNT(*) n FROM users WHERE active=1 GROUP BY role').all(), backups: listBackups().slice(0, 5) }; },
   'POST /api/backup': req => { const u = auth(req); need(u, 'admin'); const f = store.backup(db, CFG.backupDir, CFG.backupKeepDays); store.audit(db, u.login, u.ip, 'backup', path.basename(f)); return { ok: true, file: path.basename(f) }; },
 };
+// ИИ-помощник: /api/ai/status, /api/ai/chat (обезличивание и вызов ИИ — в ai.js)
+Object.assign(routes, require('./ai')({ store, db, auth, readJson, HttpError, log }));
+
 const listBackups = () => { try { return fs.readdirSync(CFG.backupDir).filter(f => /^journal-.*\.sqlite$/.test(f)).sort().reverse().map(f => ({ file: f, size: fs.statSync(path.join(CFG.backupDir, f)).size })); } catch (e) { return []; } };
 
 /* ---------- статика ---------- */
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 const serveStatic = (req, res, pathname) => {
   let base = CFG.publicDir, rel = pathname;
-  if (pathname === '/admin' || pathname === '/journal') { res.writeHead(301, { Location: pathname + '/' }); return res.end(); }
+  if (pathname === '/admin' || pathname === '/journal' || pathname === '/ai') { res.writeHead(301, { Location: pathname + '/' }); return res.end(); }
   if (pathname.startsWith('/admin/')) { base = CFG.adminDir; rel = pathname.slice(6); }
   if (rel.endsWith('/')) rel += 'index.html';
   let decoded; try { decoded = decodeURIComponent(rel); } catch (e) { return send(res, 400, { error: 'Неверный адрес' }); }

@@ -11,6 +11,11 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://aukeev.github.io,null}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
       SESSION_DAYS: ${SESSION_DAYS:-30}
+      # ИИ-помощник: без ключа работает тестовый режим
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
+      AI_LIMIT_PER_DAY: ${AI_LIMIT_PER_DAY:-100}
+      AI_ENABLED: ${AI_ENABLED:-1}
     volumes:
       - ./data:/data
       - ./backups:/backups

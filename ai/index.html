@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ИИ-помощник журнала</title>
+<style>
+body{margin:0;background:#eef1f5;font:14px/1.45 Arial,"Helvetica Neue",sans-serif;color:#1b2330}
+.top{background:#163b6b;color:#fff;padding:12px 16px;font-weight:700}
+.wrap{max-width:820px;margin:0 auto;padding:14px 16px 40px}
+.card{background:#fff;border:1px solid #d5dae2;border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 6px;color:#163b6b}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#5b6575}
+input{font:inherit;padding:6px 8px;border:1px solid #c4cbd6;border-radius:6px}
+button.b{font:inherit;padding:7px 12px;border-radius:6px;border:1px solid #163b6b;background:#163b6b;color:#fff;cursor:pointer}
+button.b.g{background:#fff;color:#163b6b}
+.note{font-size:12.5px;color:#5b6575}
+#chat .aic-wrap{border:1px solid #d5dae2;border-radius:10px;overflow:hidden;height:min(680px,calc(100vh - 230px))}
+</style>
+</head>
+<body>
+<div class="top">ИИ-помощник электронного журнала инструктажей</div>
+<div class="wrap">
+  <div class="card">
+    <h2>Тестовая страница</h2>
+    <p class="note" style="margin:0 0 8px">Без сервера страница работает на демо-данных: ответы считаются прямо здесь, в браузере, ничего никуда не уходит. Если подключить сервер журнала, вопросы пойдут на него, а сервер с ключом ИИ ответит через Claude. ФИО и ИИН сервер заменяет кодами до отправки.</p>
+    <div class="row" id="srvForm">
+      <label class="f">Адрес сервера<input id="url" placeholder="https://journal.kto.kz" style="min-width:220px"></label>
+      <label class="f">Логин<input id="lg" autocomplete="username"></label>
+      <label class="f">Пароль<input id="pw" type="password" autocomplete="current-password"></label>
+      <button class="b" id="go">Подключить</button>
+      <button class="b g" id="off" hidden>Отключить</button>
+    </div>
+    <p class="note" id="srvMsg" style="margin:6px 0 0"></p>
+  </div>
+  <div id="chat"></div>
+</div>
+<script src="core.js"></script>
+<script src="knowledge.js"></script>
+<script src="demo-data.js"></script>
+<script src="chat.js"></script>
+<script>
+(function () {
+  const KEY = 'kto-ai-test-server';
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } };
+  const save = v => { try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY); } catch (e) { } };
+  let srv = load();
+  const $ = id => document.getElementById(id);
+  if (location.protocol.startsWith('http') && /\/ai\/?/.test(location.pathname)) $('url').value = location.origin;
+  const show = () => {
+    $('off').hidden = !srv; $('go').hidden = !!srv; ['url', 'lg', 'pw'].forEach(i => $(i).disabled = !!srv);
+    $('srvMsg').textContent = srv ? `Подключено: ${srv.url} (${srv.login})` : 'Сервер не подключен: тестовый режим в браузере.';
+    if (srv) $('url').value = srv.url;
+  };
+  const chat = AI_CHAT.mount({ el: $('chat'), getServer: async () => srv, getContext: async () => AI_DEMO.build(), hasRealData: false,
+    note: 'Здесь только демо-данные (вымышленные работники). Настоящий журнал подключается в ЭЖИ кнопкой «ИИ-помощник».' });
+  $('go').onclick = async () => {
+    const url = $('url').value.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(url)) { $('srvMsg').textContent = 'Адрес должен начинаться с https://'; return; }
+    try {
+      const r = await fetch(url + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login: $('lg').value.trim(), password: $('pw').value, device: 'ИИ-помощник (тест)' }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      srv = { url, login: j.user.login, token: j.token }; save(srv); $('pw').value = ''; show(); chat.refresh();
+    } catch (e) { $('srvMsg').textContent = 'Не удалось подключиться: ' + e.message; }
+  };
+  $('off').onclick = () => { srv = null; save(null); show(); chat.refresh(); };
+  show();
+})();
+</script>
+</body>
+</html>
