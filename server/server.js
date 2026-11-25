@@ -128,9 +128,20 @@ const routes = {
   'PUT /api/staff': async req => {
     const u = auth(req); need(u, 'otos', 'admin'); const b = await readJson(req);
     if (!Array.isArray(b.staff)) throw new HttpError(400, 'Нужен список staff');
-    const list = b.staff.filter(s => s && s.fio).map(s => ({ id: String(s.id || crypto.randomUUID()), fio: String(s.fio), iin: String(s.iin || ''), tab: String(s.tab || ''), birthYear: String(s.birthYear || ''), position: String(s.position || ''), unit: String(s.unit || '') }));
+    const list = b.staff.filter(s => s && s.fio).map(s => ({ id: String(s.id || crypto.randomUUID()), fio: String(s.fio), iin: String(s.iin || ''), tab: String(s.tab || ''), birthYear: String(s.birthYear || ''), position: String(s.position || ''), unit: String(s.unit || ''), ...(s.place ? { place: String(s.place) } : {}), ...(s.cat ? { cat: String(s.cat) } : {}) }));
     db.prepare('INSERT INTO staff(k,data,updated,login) VALUES(1,?,?,?) ON CONFLICT(k) DO UPDATE SET data=excluded.data, updated=excluded.updated, login=excluded.login').run(JSON.stringify(list), store.now(), u.login);
     store.audit(db, u.login, u.ip, 'staff.put', list.length); return { ok: true, count: list.length };
+  },
+
+  // настройки журнала ЭЖИ для телефонов: реквизиты, реестр журналов, программы (без ПДн)
+  'GET /api/config': req => { auth(req); const r = db.prepare(`SELECT v FROM meta WHERE k='config'`).get(); return r ? JSON.parse(r.v) : { config: null }; },
+  'PUT /api/config': async req => {
+    const u = auth(req); need(u, 'otos', 'admin'); const b = await readJson(req);
+    if (!b || typeof b.config !== 'object' || Array.isArray(b.config)) throw new HttpError(400, 'Нужен объект config');
+    const v = JSON.stringify({ config: b.config, updated: store.now(), by: u.login });
+    if (v.length > 2 * 1024 * 1024) throw new HttpError(413, 'Слишком большие настройки');
+    db.prepare(`INSERT INTO meta(k,v) VALUES('config',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(v);
+    store.audit(db, u.login, u.ip, 'config.put'); return { ok: true };
   },
 
   'GET /api/users': req => { need(auth(req), 'admin'); return { users: db.prepare('SELECT login, fio, role, unit, active, created, must_change FROM users ORDER BY role, login').all() }; },

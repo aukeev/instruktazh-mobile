@@ -18,8 +18,9 @@ const TYPES = ['Вводный', 'Первичный', 'Повторный', 'В
 const needReason = t => t === 'Внеплановый' || t === 'Целевой';
 
 /* ---------- хранение ---------- */
-let db = { records: [], staff: [], settings: { instructor: { fio: '', position: '', iin: '' }, demo: false, pinHash: '', lastInstr: {} }, exported: {}, server: { url: '', token: '', user: null, synced: {}, rejected: {}, staffUpdated: '', lastOk: '', lastErr: '' } };
+let db = { records: [], staff: [], settings: { instructor: { fio: '', position: '', iin: '' }, demo: false, pinHash: '', lastInstr: {} }, exported: {}, server: { url: '', token: '', user: null, synced: {}, rejected: {}, staffUpdated: '', lastOk: '', lastErr: '' }, ezhi: null };
 try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); db = { ...db, ...d, settings: { ...db.settings, ...(d.settings || {}) }, server: { ...db.server, ...(d.server || {}) } }; } } catch (e) { }
+EZ.set(db.ezhi && db.ezhi.config);
 if (!db.server.url && location.protocol === 'https:' && !/github\.io$/.test(location.hostname)) db.server.url = location.origin;
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('Не удалось сохранить. Выгрузите записи в файл.'); } };
 const toast = t => { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 3200); };
@@ -130,6 +131,29 @@ const sign = async (text, names, meta, person, ui) => {
   const signer = parseCMS(sigs[0]);
   return { demo: false, cms: sigs[0], signer, at: new Date().toISOString(), check: check(person, signer), doc: text };
 };
+const signMany = async (texts, names, meta, person, ui) => {
+  const my = ++token;
+  if (db.settings.demo) {
+    ui.status('Демо: имитация подписи...'); await new Promise(r => setTimeout(r, 900)); if (my !== token) return null;
+    return texts.map(text => ({ demo: true, cms: '', signer: { cn: person.fio.toUpperCase(), gn: '', iin: person.iin || '', time: null }, at: new Date().toISOString(), check: 'ok', doc: text }));
+  }
+  const c = new QRSigningClientCMS('Журнал инструктажей КарНУ', true);
+  for (let i = 0; i < texts.length; i++) await c.addDataToSign(names(i), new TextEncoder().encode(texts[i]).buffer, meta(i), false);
+  ui.status('Регистрация процедуры подписания...');
+  const qr = await c.registerQRSinging(); if (my !== token) return null;
+  ui.qr(qr, c.getEGovMobileLaunchLink());
+  const sigs = await c.getSignatures(() => { if (my !== token) return; ui.qr(null, null); ui.status('Данные переданы на телефон. Проверьте документы и подпишите в eGov Mobile.'); });
+  if (my !== token) return null;
+  if (!sigs || sigs.length !== texts.length) throw new Error('SIGEX вернул не все подписи');
+  return sigs.map((cms, i) => { const signer = parseCMS(cms); return { demo: false, cms, signer, at: new Date().toISOString(), check: check(person, signer), doc: texts[i] }; });
+};
+/* ---------- формат ЭЖИ: запись телефона -> запись ЭЖИ для текста подписи ---------- */
+const isEz = r => !!(r && r.ezhi);
+const ezRec = (r, w, sig1) => ({ j: r.ezhi.j, journalId: r.ezhi.journalId, kind: r.ezhi.kind, cause: r.ezhi.cause || '', date: r.date, note: '', program: r.ezhi.program || null, topic: r.ezhi.topic || '',
+  correctionOf: null, person: { fio: w.fio, iin: w.iin || '', pos: w.profession || '', place: w.place || '' }, instr: { fio: r.instructor.fio, pos: r.instructor.position || '' }, instr2: null,
+  result: r.ezhi.j === 'J1' || w.knowledge ? 'pass' : 'fail', sig1 });
+const ezDoc = (r, w, role, sig1) => EZ.docFor(ezRec(r, w, sig1), role, r.ezhi.journal, r.ezhi.org);
+const ezSig1 = async w => w.sig.demo ? { method: 'egov', cert: { serial: 'ДЕМО' }, at: w.sig.at, cmsHash: '' } : { method: 'egov', cert: EZ.cmsSignerCert(w.sig.cms), at: w.sig.at, cmsHash: await EZ.sha256hex(w.sig.cms) };
 const failText = e => { const net = e && (e.message || '').includes('Не удалось получить ответа'); return (e.message || String(e)) + (e.details ? '\n' + e.details : '') + (net ? '\n\nНет связи с sigex.kz. Проверьте мобильный интернет.' : ''); };
 const putSig = (holder, s) => { if (holder.sig) { holder.sigHistory = holder.sigHistory || []; holder.sigHistory.push({ ...holder.sig, replacedAt: new Date().toISOString() }); } holder.sig = s; };
 
@@ -158,7 +182,7 @@ const mergeStaff = list => {
   let add = 0, upd = 0;
   for (const s of list) {
     const m = db.staff.find(x => (s.iin && x.iin === s.iin) || (s.tab && x.tab === s.tab) || (x.fio.toLowerCase() === s.fio.toLowerCase() && x.unit === s.unit && !(x.tab && s.tab && x.tab !== s.tab)));
-    if (m) { for (const k of ['iin', 'tab', 'birthYear', 'position', 'unit']) if (s[k] && !m[k]) m[k] = s[k]; upd++; } else { db.staff.push(s); add++; }
+    if (m) { for (const k of ['iin', 'tab', 'birthYear', 'position', 'unit']) if (s[k] && !m[k]) m[k] = s[k]; if (s.place) for (const k of ['place', 'cat', 'unit', 'position']) if (s[k]) m[k] = s[k]; upd++; } else { db.staff.push(s); add++; }
   }
   save(); return { add, upd };
 };
@@ -200,6 +224,7 @@ const syncNow = (loud) => {
   if (!srvOn()) return Promise.resolve();
   if (syncing) return syncing;
   syncing = (async () => {
+    await null; // finally ниже должен выполниться после присваивания syncing
     try {
       const list = queue();
       for (let i = 0; i < list.length; i += 20) {
@@ -224,11 +249,12 @@ const syncNow = (loud) => {
   return syncing;
 };
 const staffFromServer = async loud => {
+  try { const c = await api('GET', '/api/config'); if (c && c.config && c.config.ezhi && (!db.ezhi || db.ezhi.updated !== c.updated)) { db.ezhi = { config: c.config.ezhi, updated: c.updated }; EZ.set(db.ezhi.config); save(); if (loud) toast('Настройки журнала ЭЖИ обновлены'); } } catch (e) { if (e.net) throw e; }
   const j = await api('GET', '/api/staff');
   srv.staffChecked = new Date().toISOString();
   if (!j.staff.length) { if (loud) toast('На сервере списка персонала пока нет'); save(); return; }
   if (j.updated === srv.staffUpdated && !loud) { save(); return; }
-  const r = mergeStaff(j.staff.filter(x => x && x.fio).map(x => ({ id: String(x.id || uid()), fio: normFio(x.fio), iin: String(x.iin || ''), tab: String(x.tab || ''), birthYear: String(x.birthYear || ''), position: String(x.position || ''), unit: String(x.unit || '') })));
+  const r = mergeStaff(j.staff.filter(x => x && x.fio).map(x => ({ id: String(x.id || uid()), fio: normFio(x.fio), iin: String(x.iin || ''), tab: String(x.tab || ''), birthYear: String(x.birthYear || ''), position: String(x.position || ''), unit: String(x.unit || ''), ...(x.place ? { place: String(x.place), cat: String(x.cat || '') } : {}) })));
   srv.staffUpdated = j.updated; save();
   toast(`Список персонала с сервера: добавлено ${r.add}, обновлено ${r.upd}`);
 };
@@ -265,7 +291,58 @@ VIEWS.home = () => {
   const sb = $('#sync-now'); if (sb) sb.onclick = () => { sb.disabled = true; sb.textContent = 'Отправка...'; syncNow(true); };
 };
 
+/* новый инструктаж по журналу ЭЖИ: журнал, вид, программа и тексты подписи как в ЭЖИ */
+VIEWS.newEz = s => {
+  title('Новый инструктаж (ЭЖИ)');
+  const cfg = EZ.cfg;
+  const d = s.draft || (s.draft = { date: today(), sel: [], extra: [], ez: { journalId: db.settings.lastJournal || '', kind: 'povt', program: '', topic: '', cause: '' } });
+  const e = d.ez;
+  const draw = () => {
+    const js = cfg.journals.filter(j => EZ.jOpen(j, d.date)).sort((a, b) => (a.type + (a.section || '')).localeCompare(b.type + (b.section || ''), 'ru'));
+    if (!js.some(j => j.id === e.journalId)) e.journalId = (js[0] || {}).id || '';
+    const jr = js.find(j => j.id === e.journalId);
+    const kinds = !jr ? [] : jr.type === 'J1' ? ['vvod'] : EZ.KINDS_J2;
+    if (!kinds.includes(e.kind)) e.kind = kinds[0] || '';
+    const progs = (cfg.programs || []).filter(p => p.kind === e.kind);
+    if (!progs.some(p => p.code === e.program)) e.program = EZ.PROG_OPT(e.kind) ? '' : ((progs[0] || {}).code || '');
+    $('#view').innerHTML = `<div class="card">
+      <label for="z-date">Дата</label><input id="z-date" type="date" max="${today()}" value="${esc(d.date)}">
+      <label for="z-j">Журнал</label><select id="z-j">${js.length ? js.map(j => `<option value="${esc(j.id)}" ${j.id === e.journalId ? 'selected' : ''}>${esc(EZ.jTitle(j))}</option>`).join('') : '<option value="">Нет открытых журналов на эту дату</option>'}</select>
+      <label for="z-k">Вид инструктажа</label><select id="z-k" ${kinds.length < 2 ? 'disabled' : ''}>${kinds.map(k => `<option value="${k}" ${k === e.kind ? 'selected' : ''}>${esc(EZ.KIND[k])}</option>`).join('')}</select>
+      <div ${EZ.CAUSE_SHOW(e.kind) ? '' : 'hidden'}><label for="z-c">${e.kind === 'vnep' ? 'Причина внепланового инструктажа *' : 'Вид работ, основание целевого инструктажа'}</label><input id="z-c" value="${esc(e.cause)}"></div>
+      <label for="z-p">Программа инструктажа${EZ.PROG_OPT(e.kind) ? '' : ' *'}</label><select id="z-p">${EZ.PROG_OPT(e.kind) ? `<option value="">— без программы, по причине —</option>` : ''}${progs.map(p => `<option value="${esc(p.code)}" ${p.code === e.program ? 'selected' : ''}>${esc(p.code + ' – ' + p.titleRu + ' (v' + p.ver + ')')}</option>`).join('')}</select>
+      ${!progs.length && !EZ.PROG_OPT(e.kind) ? '<div class="err">В ЭЖИ нет программы для этого вида. Попросите инженера ОТОС добавить её и отправить настройки на сервер.</div>' : ''}
+      <div ${EZ.PROG_OPT(e.kind) ? '' : 'hidden'}><label for="z-t">Содержание инструктажа (какие требования, инструкции доведены)</label><textarea id="z-t">${esc(e.topic)}</textarea></div>
+      <div class="note">Инструктирующий: ${esc(db.settings.instructor.fio)}${db.settings.instructor.position ? ', ' + esc(db.settings.instructor.position) : ''}. Тексты подписи формируются как в ЭЖИ.</div></div>
+      <div class="err" id="f-err"></div>`;
+    $('#z-date').onchange = ev => { d.date = ev.target.value; draw(); };
+    $('#z-j').onchange = ev => { e.journalId = ev.target.value; draw(); };
+    $('#z-k').onchange = ev => { e.kind = ev.target.value; draw(); };
+    $('#z-p').onchange = ev => { e.program = ev.target.value; };
+    $('#z-c').oninput = ev => { e.cause = ev.target.value; };
+    $('#z-t').oninput = ev => { e.topic = ev.target.value; };
+  };
+  draw();
+  setBar(`<button class="btn" id="next">Далее: кто присутствует →</button>`);
+  $('#next').onclick = () => {
+    const jr = cfg.journals.find(j => j.id === e.journalId); const err = t => { $('#f-err').textContent = t; };
+    e.cause = e.cause.trim(); e.topic = e.topic.trim();
+    if (!d.date || d.date > today()) return err('Укажите дату не позже сегодняшней');
+    if (!jr) return err('Выберите журнал');
+    if (!EZ.jOpen(jr, d.date)) return err('Дата вне периода ведения журнала');
+    if (EZ.CAUSE_REQ(e.kind) && e.cause.length < 5) return err('Укажите причину внепланового инструктажа (п. 66, 71 Правил № 1019)');
+    const prog = (cfg.programs || []).find(p => p.code === e.program && p.kind === e.kind);
+    if (!prog && !EZ.PROG_OPT(e.kind)) return err('Выберите программу инструктажа');
+    if (!prog && e.topic.length < 10) return err('Если программа не выбрана, укажите содержание инструктажа');
+    d.unit = jr.section || cfg.org.unit; d.type = EZ.TYPE_OF[e.kind]; d.reason = EZ.CAUSE_SHOW(e.kind) ? e.cause : '';
+    d.instructions = prog ? `${prog.code} ${prog.titleRu}` : e.topic;
+    d.ezFinal = { j: jr.type, journalId: jr.id, kind: e.kind, cause: d.reason, topic: EZ.PROG_OPT(e.kind) ? e.topic : '', program: prog ? { code: prog.code, titleKk: prog.titleKk, titleRu: prog.titleRu, ver: prog.ver } : null, journal: jr, org: cfg.org };
+    go('pick', { draft: d, unit: units().includes(d.unit) ? d.unit : '', q: '' });
+  };
+};
+
 VIEWS.new = s => {
+  if (EZ.cfg && db.settings.ezhiMode !== false) return VIEWS.newEz(s);
   title('Новый инструктаж');
   const d = s.draft || (s.draft = { unit: db.settings.lastUnit || '', date: today(), type: 'Первичный', reason: '', instructions: '', sel: [], extra: [] });
   const ul = units();
@@ -331,12 +408,14 @@ VIEWS.pick = s => {
     $('#x-fio').value = $('#x-pos').value = $('#x-iin').value = ''; draw();
   };
   $('#create').onclick = () => {
-    const people = [...d.sel.map(id => db.staff.find(x => x.id === id)).filter(Boolean).map(x => ({ fio: x.fio, iin: x.iin, birthYear: x.birthYear || byFromIIN(x.iin), profession: x.position, sid: x.id })),
-      ...d.extra.map(x => ({ fio: x.fio, iin: x.iin, birthYear: byFromIIN(x.iin), profession: x.position, sid: '' }))];
+    const ez = d.ezFinal, defPlace = s => ez ? (s.place || (ez.org.unit + (ez.journal.section ? ', ' + ez.journal.section : ''))) : undefined;
+    const people = [...d.sel.map(id => db.staff.find(x => x.id === id)).filter(Boolean).map(x => ({ fio: x.fio, iin: x.iin, birthYear: x.birthYear || byFromIIN(x.iin), profession: x.position, sid: x.id, ...(ez ? { place: defPlace(x), cat: x.cat || 'Қызметкер / Работник' } : {}) })),
+      ...d.extra.map(x => ({ fio: x.fio, iin: x.iin, birthYear: byFromIIN(x.iin), profession: x.position, sid: '', ...(ez ? { place: defPlace({}), cat: 'Қызметкер / Работник' } : {}) }))];
     if (!people.length) { $('#p-err').textContent = 'Отметьте хотя бы одного работника'; return; }
     const ins = db.settings.instructor;
     const r = { id: uid(), created: new Date().toISOString(), unit: d.unit, date: d.date, type: d.type, reason: needReason(d.type) ? d.reason : '', instructions: d.instructions,
-      instructor: { fio: ins.fio, position: ins.position, iin: ins.iin }, workers: people.map(p => ({ id: uid(), knowledge: true, sig: null, ...p })), instructorSig: null, source: 'mobile' };
+      instructor: { fio: ins.fio, position: ins.position, iin: ins.iin }, workers: people.map(p => ({ id: uid(), knowledge: true, sig: null, ...p })), instructorSig: null, source: 'mobile', ...(d.ezFinal ? { ezhi: d.ezFinal } : {}) };
+    if (d.ezFinal) db.settings.lastJournal = d.ezFinal.journalId;
     db.records.unshift(r); db.settings.lastUnit = d.unit; db.settings.lastInstr[d.unit] = d.instructions; save();
     stack = [{ v: 'home' }, { v: 'record', id: r.id }]; history.replaceState({ n: 2 }, ''); render();
     toast('Запись создана. Работники подписывают по очереди.');
@@ -348,9 +427,9 @@ VIEWS.record = s => {
   title(fmtD(r.date) + ', ' + r.type.toLowerCase());
   const closed = !!r.instructorSig;
   const nextW = r.workers.find(w => !w.sig);
-  $('#view').innerHTML = `<div class="card"><h3>${esc(r.unit)}</h3><div class="sub">${esc(r.instructions)}</div>${r.reason ? `<div class="sub">Причина: ${esc(r.reason)}</div>` : ''}<div class="sub">Провел: ${esc(r.instructor.fio)}</div><div style="margin-top:6px">${recStatus(r)}</div></div>
+  $('#view').innerHTML = `<div class="card"><h3>${esc(r.unit)}</h3>${isEz(r) ? `<div class="sub">Журнал ЭЖИ: ${esc(EZ.jTitle(r.ezhi.journal))}</div>` : ''}<div class="sub">${esc(r.instructions)}</div>${r.reason ? `<div class="sub">Причина: ${esc(r.reason)}</div>` : ''}<div class="sub">Провел: ${esc(r.instructor.fio)}</div><div style="margin-top:6px">${recStatus(r)}</div></div>
     <div class="card"><ul class="list">${r.workers.map(w => `<li><div class="grow"><b>${esc(w.fio)}</b><div class="sub">${esc(w.profession || '')}${w.sig && w.sig.signer && w.sig.signer.cn ? '<br>Подписал: ' + esc(w.sig.signer.cn + ' ' + w.sig.signer.gn) + ' ' + esc(maskIIN(w.sig.signer.iin)) : ''}</div>${sigTag(w.sig)}
-      ${closed ? '' : `<label class="row" style="margin:6px 0 0;color:var(--ink);font-size:14px"><input type="checkbox" data-kn="${esc(w.id)}" ${w.knowledge ? 'checked' : ''} ${w.sig ? 'disabled' : ''} style="width:22px;min-height:22px;height:22px"> знания проверены</label>`}</div>
+      ${closed || (isEz(r) && r.ezhi.j === 'J1') ? '' : `<label class="row" style="margin:6px 0 0;color:var(--ink);font-size:14px"><input type="checkbox" data-kn="${esc(w.id)}" ${w.knowledge ? 'checked' : ''} ${w.sig ? 'disabled' : ''} style="width:22px;min-height:22px;height:22px"> ${isEz(r) ? 'прошёл проверку знаний' : 'знания проверены'}</label>`}${closed && isEz(r) && r.ezhi.j === 'J2' ? `<div class="sub">Проверка знаний: ${w.knowledge ? 'прошёл' : 'не прошёл'}</div>` : ''}</div>
       ${closed ? '' : w.sig && workerOk(w) ? '' : `<button class="btn ${w.sig ? 'ghost' : ''}" data-sw="${esc(w.id)}">${w.sig ? 'Заново' : 'Подписать'}</button>`}</li>`).join('')}</ul></div>
     ${closed ? `<div class="card"><h3>Запись закрыта</h3><div class="sub">Подпись инструктирующего: ${esc(r.instructorSig.signer.cn || r.instructor.fio)}, ${esc(fmtDT(r.instructorSig.signer.time || r.instructorSig.at))}</div><div class="sub">${esc(srvLine(r))}</div></div>` : ''}
     ${!closed && !r.workers.some(w => w.sig) ? `<button class="btn danger block" id="del">Удалить черновик</button>` : ''}`;
@@ -363,15 +442,43 @@ VIEWS.record = s => {
   else setBar('');
 };
 
+/* ЭЖИ: инструктирующий подписывает отдельный документ на каждого работника (как в ЭЖИ), одним сеансом eGov */
+const signEzInstr = async (r, ui) => {
+  try {
+    const sig1s = []; for (const w of r.workers) sig1s.push(await ezSig1(w));
+    const docs = r.workers.map((w, i) => ezDoc(r, w, 2, sig1s[i]));
+    ui.status(`Документов на подпись: ${docs.length}`);
+    const sigs = await signMany(docs, i => [`Инструктаж: ${r.workers[i].fio}`, `Нұсқама: ${r.workers[i].fio}`], () => [{ name: 'Күні / Дата', value: fmtD(r.date) }, { name: 'Журнал', value: r.ezhi.journal.reg }], r.instructor, ui);
+    if (!sigs || cur().v !== 'sign') return;
+    const first = sigs[0];
+    if (!first.demo) {
+      const iins = new Set(sigs.map(x => x.signer.iin));
+      if (iins.size !== 1 || !first.signer.iin) { $('#er').textContent = 'Документы подписаны разными ЭЦП или без ИИН. Подпись не принята.'; ui.qr(null); return; }
+      if (r.instructor.iin && first.signer.iin !== r.instructor.iin) { $('#er').textContent = 'ИИН подписавшего не совпадает с ИИН инструктирующего. Подпись не принята.'; ui.qr(null); return; }
+      if (r.workers.some(w => w.iin === first.signer.iin)) { $('#er').textContent = 'Инструктирующий не может подписывать за инструктируемого. Подпись не принята.'; ui.qr(null); return; }
+    }
+    r.workers.forEach((w, i) => { w.sig2 = { ...sigs[i], check: 'ok' }; });
+    r.instructorSig = { ...first, check: 'ok', ezhi: true, count: sigs.length };
+    if (r.workers.some(x => x.sig && x.sig.demo) || first.demo) r.demo = true;
+    if (!r.instructor.iin && first.signer.iin) r.instructor.iin = first.signer.iin;
+    if (!db.settings.instructor.iin && first.signer.iin && !first.demo) db.settings.instructor.iin = first.signer.iin;
+    save(); setTimeout(() => syncNow(false), 300);
+    ui.qr(null); ui.status(`Подписано документов: ${sigs.length}. Запись закрыта.`);
+    setBar(`<button class="btn" id="to-rec">К записи</button>`); $('#to-rec').onclick = back;
+  } catch (e) { if (cur().v === 'sign') { ui.qr(null); ui.status(''); $('#er').textContent = failText(e); } }
+};
+
 VIEWS.sign = async s => {
   const r = db.records.find(x => x.id === s.id); if (!r) { back(); return; }
   const isInstr = s.wid === 'instr';
   const w = isInstr ? null : r.workers.find(x => x.id === s.wid);
   const person = isInstr ? r.instructor : w;
   title(isInstr ? 'Подпись инструктирующего' : 'Подпись работника');
+  const ez = isEz(r);
+  const wDoc = isInstr ? '' : ez ? ezDoc(r, w, 1) : workerDoc(r, w);
   $('#view').innerHTML = `<div class="who">${esc(person.fio)}</div><div class="sub" style="text-align:center">${isInstr ? 'Подпишите своей ЭЦП в eGov Mobile на этом телефоне' : 'Передайте телефон работнику: он сканирует QR в своём eGov Mobile («eGov QR»)'}</div>
     <div class="qrbox" id="qr"></div><div class="status" id="st"></div><div class="err" id="er"></div>
-    ${isInstr ? '' : `<details class="card" style="margin-top:12px"><summary>Текст, который подписывает работник</summary><pre style="white-space:pre-wrap;font:14px/1.4 inherit">${esc(workerDoc(r, w))}</pre></details>`}`;
+    ${isInstr ? '' : `<details class="card" style="margin-top:12px"><summary>Текст, который подписывает работник</summary><pre style="white-space:pre-wrap;font:14px/1.4 inherit">${esc(wDoc)}</pre></details>`}`;
   setBar(`<button class="btn ghost" id="cancel">Отмена</button><a class="btn" id="launch" hidden>Открыть eGov Mobile</a>`);
   $('#cancel').onclick = back;
   const ui = {
@@ -382,11 +489,21 @@ VIEWS.sign = async s => {
       if (img) ui.status(isInstr ? 'Нажмите «Открыть eGov Mobile» или отсканируйте QR с другого устройства.' : 'Откройте eGov Mobile, нажмите «eGov QR» и отсканируйте код.');
     }
   };
+  if (ez && isInstr) return signEzInstr(r, ui);
   try {
     const sig = isInstr
       ? await sign(await instructorDoc(r), [`Инструктаж провел: ${r.instructor.fio}, ${fmtD(r.date)}`], [{ name: 'Вид инструктажа', value: r.type }, { name: 'Работников', value: String(r.workers.length) }], r.instructor, ui)
-      : await sign(workerDoc(r, w), [`Инструктаж: ${w.fio}, ${fmtD(r.date)}`, `Нұсқама: ${w.fio}, ${fmtD(r.date)}`], [{ name: 'Вид инструктажа', value: r.type }, { name: 'Дата', value: fmtD(r.date) }, { name: 'Инструктирующий', value: r.instructor.fio }], w, ui);
+      : ez ? await sign(wDoc, [`Инструктаж: ${w.fio}`, `Нұсқама: ${w.fio}`], [{ name: 'Күні / Дата', value: fmtD(r.date) }, { name: 'Журнал', value: r.ezhi.journal.reg }], w, ui)
+      : await sign(wDoc, [`Инструктаж: ${w.fio}, ${fmtD(r.date)}`, `Нұсқама: ${w.fio}, ${fmtD(r.date)}`], [{ name: 'Вид инструктажа', value: r.type }, { name: 'Дата', value: fmtD(r.date) }, { name: 'Инструктирующий', value: r.instructor.fio }], w, ui);
     if (!sig || cur().v !== 'sign') return;
+    if (ez && !sig.demo) {
+      if (!sig.signer.iin) { $('#er').textContent = 'В сертификате нет ИИН. Подпись не принята.'; ui.qr(null); return; }
+      if (r.instructor.iin && sig.signer.iin === r.instructor.iin) { $('#er').textContent = 'Инструктируемый и инструктирующий – одно лицо (одинаковый ИИН). Подпись не принята.'; ui.qr(null); return; }
+      if (r.workers.some(x => x !== w && x.iin === sig.signer.iin)) { $('#er').textContent = 'Этот ИИН уже есть в записи. Подпись не принята.'; ui.qr(null); return; }
+      if (sig.check === 'bad') { $('#er').textContent = 'ИИН в подписи не совпадает с ИИН работника. Подпись не принята.'; ui.qr(null); return; }
+      if (!w.iin) { w.iin = sig.signer.iin; w.birthYear = byFromIIN(w.iin); }
+      sig.check = 'ok';
+    }
     if (isInstr) {
       if (sig.check === 'bad') { $('#er').textContent = 'Подпись не принята: ЭЦП принадлежит другому человеку (' + sig.signer.cn + ').'; ui.qr(null); return; }
       r.instructorSig = sig; if (r.workers.some(x => x.sig && x.sig.demo) || sig.demo) r.demo = true;
@@ -438,11 +555,14 @@ VIEWS.settings = () => {
     <div class="card"><h3>Защита</h3><div class="sub">${db.settings.pinHash ? 'PIN установлен.' : 'PIN не установлен.'} Приложение блокируется через 2 минуты в фоне. PIN защищает от случайного просмотра, но не шифрует данные.</div>
       <label for="s-pin">Новый PIN (4–8 цифр, пусто = убрать)</label><input id="s-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
       <div style="margin-top:10px"><button class="btn ghost block" id="s-pin-set">Сохранить PIN</button></div></div>
+    ${EZ.cfg ? `<div class="card"><h3>Журнал ЭЖИ</h3><div class="sub">Настройки ЭЖИ получены с сервера${db.ezhi.updated ? ' ' + esc(fmtDT(db.ezhi.updated)) : ''}: журналов ${EZ.cfg.journals.length}, программ ${(EZ.cfg.programs || []).length}.</div>
+      <label class="row" style="color:var(--ink);font-size:16px"><input type="checkbox" id="s-ezhi" ${db.settings.ezhiMode !== false ? 'checked' : ''} style="width:24px;min-height:24px;height:24px"> Проводить инструктажи по журналам ЭЖИ</label>
+      <div class="note">Тексты подписи формируются как в ЭЖИ, инструктирующий подписывает документ на каждого работника. Записи загружаются в ЭЖИ без изменений.</div></div>` : ''}
     <div class="card"><h3>Демо-режим</h3><label class="row" style="color:var(--ink);font-size:16px"><input type="checkbox" id="s-demo" ${db.settings.demo ? 'checked' : ''} style="width:24px;min-height:24px;height:24px"> Подпись без eGov, для обучения</label>
       <div class="note">Демо-записи помечаются и не имеют юридической силы.</div></div>
     <div class="card"><h3>Очистка</h3><div class="sub">Удаляет закрытые записи, уже отправленные на сервер или выгруженные в файл, чтобы ИИН не хранились на телефоне.</div>
       <div style="margin-top:10px"><button class="btn danger block" id="s-clean">Удалить выгруженные записи</button></div></div>
-    <div class="sub" style="text-align:center">Версия 0.2</div>`;
+    <div class="sub" style="text-align:center">Версия 0.3</div>`;
   const si = $('#srv-in'); if (si) si.onclick = async () => {
     $('#srv-err').textContent = ''; let url = $('#srv-url').value.trim().replace(/\/+$/, ''); if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
     if (!url) { $('#srv-err').textContent = 'Укажите адрес сервера'; return; }
@@ -479,6 +599,7 @@ VIEWS.settings = () => {
     const p = $('#s-pin').value; if (p && !/^\d{4,8}$/.test(p)) { toast('PIN: от 4 до 8 цифр'); return; }
     db.settings.pinHash = p ? await sha('kto:' + p) : ''; save(); toast(p ? 'PIN установлен' : 'PIN убран'); render();
   };
+  const sez = $('#s-ezhi'); if (sez) sez.onchange = e => { db.settings.ezhiMode = e.target.checked; save(); };
   $('#s-demo').onchange = e => { db.settings.demo = e.target.checked; save(); render(); };
   $('#s-clean').onclick = () => {
     const n = db.records.filter(r => r.instructorSig && isOut(r)).length; if (!n) { toast('Нет отправленных или выгруженных закрытых записей'); return; }
